@@ -326,6 +326,8 @@ class HydrusDB( HydrusDBBase.DBBase ):
         self._we_have_connected_to_the_database_at_least_once = False
         
         self._finished_job_event = threading.Event()
+        self._i_am_idle = threading.Event()
+        self._i_am_idle.set()
         
         main_db_filename = db_name
         
@@ -432,7 +434,11 @@ class HydrusDB( HydrusDBBase.DBBase ):
         
         self._RepairDB( version )
         
+        did_updates = False
+        
         while version < HC.SOFTWARE_VERSION:
+            
+            did_updates = True
             
             time.sleep( self.UPDATE_WAIT )
             
@@ -473,6 +479,8 @@ class HydrusDB( HydrusDBBase.DBBase ):
             
             ( version, ) = self._Execute( 'SELECT version FROM version;' ).fetchone()
             
+        
+        # I did have _UpdateDBFolderWithSupplementaryUpdates here, on a did_updates, but decided against it
         
         self._CloseDBConnection()
         
@@ -683,7 +691,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 
                 if len( missing_external_db_paths ) > 0:
                     
-                    message = f'While the main database file, "{main_db_path}", exists, the external files {missing_external_paths_summary} do not!\n\nIf this is a surprise to you, you have probably had a hard drive failure. You must close this process immediately and diagnose what has happened. Check the "help my db is broke.txt" document in the install_dir/db directory for additional help.\n\nIf this is not a surprise, then you may continue if you wish, and hydrus will do its best to reconstruct the missing files. You will see more error prompts.'
+                    message = f'While the main database file, "{main_db_path}", exists, the external files {missing_external_paths_summary} do not!\n\nIf this is a surprise to you, you have probably had a hard drive failure. You must close this process immediately and diagnose what has happened. Check the \'Recovery->Help my db is broke\' document in the help for additional reading.\n\nIf this is not a surprise, then you may continue if you wish, and hydrus will do its best to reconstruct the missing files. You will see more error prompts.'
                     
                     self._controller.BlockingSafeShowCriticalMessage( 'missing database file!', message )
                     
@@ -702,27 +710,9 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 
                 self._is_first_start = True
                 
-                if self._db_dir != HC.CONTENT_DB_DIR:
-                    
-                    # we are creating a new db dir outside of the default structure, so let's copy the help stuff over
-                    
-                    for filename in os.listdir( HC.CONTENT_DB_DIR ):
-                        
-                        source_path = os.path.join( HC.CONTENT_DB_DIR, filename )
-                        
-                        if os.path.isfile( source_path ):
-                            
-                            if filename.endswith( '.txt' ) or ( HC.PLATFORM_WINDOWS and filename == 'sqlite3.exe' ):
-                                
-                                dest_path = os.path.join( self._db_dir, filename )
-                                
-                                HydrusPaths.MirrorFile( source_path, dest_path )
-                                
-                            
-                        
-                    
-                
                 self._CreateDB()
+                
+                self._UpdateDBFolderWithSupplementaryFiles()
                 
                 self._cursor_transaction_wrapper.CommitAndBegin()
                 
@@ -737,7 +727,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
                     
                     message = f'The "version" table in your "{main_db_path}" database was missing. I cannot recover from this automatically.'
                     message += '\n\n'
-                    message += 'If you have used this database many times before, then you have probably had a hard drive failure. Hydrus will now close. Check the "help my db is broke.txt" document in the install_dir/db directory.'
+                    message += 'If you have used this database many times before, then you have probably had a hard drive failure. Hydrus will now close. Check the \'Recovery->Help my db is broke\' document in the help.'
                     message += '\n\n'
                     message += 'If you recently tried to start hydrus for the first time but got an error and are now trying again, your database files failed to initialise that first time and are now in the way. Go to your database folder (probably install_dir/db) and look at the .db files. Are they very small? Delete them and any .db-shm or .db-wal files with them and then try booting the program again. If you get the same problem over and over, you probably have a hard drive permission problem where hydrus can create the database files but not write to them. If the issue seems complicated, hydev can help you figure it all out.'
                     
@@ -961,6 +951,13 @@ class HydrusDB( HydrusDBBase.DBBase ):
             
         
     
+    def _PutJob( self, job ):
+        
+        self._jobs.put( job )
+        
+        self._i_am_idle.clear()
+        
+    
     def _Read( self, action, *args, **kwargs ):
         
         if action not in self._read_commands_to_methods:
@@ -1010,6 +1007,23 @@ class HydrusDB( HydrusDBBase.DBBase ):
     def _UpdateDB( self, version ):
         
         raise NotImplementedError()
+        
+    
+    def _UpdateDBFolderWithSupplementaryFiles( self ):
+        
+        from hydrus.core import HydrusStaticDir
+        
+        if HC.PLATFORM_WINDOWS:
+            
+            sqlite_exe_path = os.path.join( HydrusStaticDir.INSTALL_STATIC_DIR, 'build_files', 'windows', 'sqlite3.exe' )
+            
+            if os.path.exists( sqlite_exe_path ) and os.path.isfile( sqlite_exe_path ):
+                
+                dest_path = os.path.join( self._db_dir, 'sqlite3.exe' )
+                
+                HydrusPaths.MirrorFile( sqlite_exe_path, dest_path )
+                
+            
         
     
     def _Write( self, action, *args, **kwargs ):
@@ -1224,6 +1238,11 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 self._current_status = ''
                 self.publish_status_update()
                 
+                if self._jobs.empty():
+                    
+                    self._i_am_idle.set()
+                    
+                
             
             if self._pause_and_disconnect:
                 
@@ -1283,7 +1302,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
             raise HydrusExceptions.ShutdownException( 'Application has shut down!' )
             
         
-        self._jobs.put( job )
+        self._PutJob( job )
         
         return job.GetResult()
         
@@ -1306,15 +1325,14 @@ class HydrusDB( HydrusDBBase.DBBase ):
                 
                 raise HydrusExceptions.ShutdownException( 'Application shutting down!' )
                 
-            elif self.JobsQueueEmpty() and not self.CurrentlyDoingJob():
-                
-                return
-                
             else:
                 
-                self._finished_job_event.wait( 0.5 )
+                i_am_idle = self._i_am_idle.wait( 0.5 )
                 
-                self._finished_job_event.clear()
+                if i_am_idle:
+                    
+                    return
+                    
                 
             
         
@@ -1330,7 +1348,7 @@ class HydrusDB( HydrusDBBase.DBBase ):
             raise HydrusExceptions.ShutdownException( 'Application has shut down!' )
             
         
-        self._jobs.put( job )
+        self._PutJob( job )
         
         if synchronous: return job.GetResult()
         
