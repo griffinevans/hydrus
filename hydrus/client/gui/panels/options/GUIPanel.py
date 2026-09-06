@@ -40,6 +40,18 @@ class GUIPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         tt = 'In many places across the program (typically import status lists), the client will state a timestamp as "5 days ago". If you would prefer a standard ISO string, like "2018-03-01 12:40:23", check this.'
         self._always_show_iso_time.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
         
+        self._use_qt_locale_for_human_int = QW.QCheckBox( self._misc_panel )
+        tt = 'Try to render integers with your locale (as seen in _help->about_), rather than the English 1,234,567. hydev is interested in how this works out.'
+        self._use_qt_locale_for_human_int.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
+        self._not_make_child_frames_qt_tool = QW.QCheckBox( self._misc_panel )
+        tt = 'By default, small non-dialog windows like "review services" are supposed to have no taskbar entry, stay on top of their parent window nicely, and still look good. If you have issues, try checking this to set them back to the old non-tool mode.'
+        self._not_make_child_frames_qt_tool.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
+        self._force_enter_on_radio_buttons_to_do_dialog_ok = QW.QCheckBox( self._misc_panel )
+        tt = 'In some OSes, the Enter/Return keys on a radio button list simply re-selects the focused radio button. In others, the Enter/Return is promoted up to trigger a dialog ok. If the do-nothing action here drives you nuts, for instance on advanced delete file dialogs, check this and an Enter will trigger dialog ok.'
+        self._force_enter_on_radio_buttons_to_do_dialog_ok.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
+        
         self._menu_choice_buttons_can_mouse_scroll = QW.QCheckBox( self._misc_panel )
         tt = 'Many buttons that produce menus when clicked are also "scrollable", so if you wheel your mouse over them, the selection will scroll through the underlying menu. If this is annoying for you, turn it off here!'
         self._menu_choice_buttons_can_mouse_scroll.setToolTip( ClientGUIFunctions.WrapToolTip( tt ) )
@@ -110,25 +122,22 @@ class GUIPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         self._confirm_client_exit.setChecked( HC.options[ 'confirm_client_exit' ] )
         
         self._activate_window_on_tag_search_page_activation.setChecked( self._new_options.GetBoolean( 'activate_window_on_tag_search_page_activation' ) )
-        
         self._always_show_iso_time.setChecked( self._new_options.GetBoolean( 'always_show_iso_time' ) )
-        
+        self._not_make_child_frames_qt_tool.setChecked( not self._new_options.GetBoolean( 'make_child_frames_qt_tool' ) )
+        self._use_qt_locale_for_human_int.setChecked( self._new_options.GetBoolean( 'use_qt_locale_for_human_int' ) )
+        self._force_enter_on_radio_buttons_to_do_dialog_ok.setChecked( self._new_options.GetBoolean( 'force_enter_on_radio_buttons_to_do_dialog_ok' ) )
         self._menu_choice_buttons_can_mouse_scroll.setChecked( self._new_options.GetBoolean( 'menu_choice_buttons_can_mouse_scroll' ) )
-        
         self._use_native_menubar.setChecked( self._new_options.GetBoolean( 'use_native_menubar' ) )
         
         self._human_bytes_sig_figs.setValue( self._new_options.GetInteger( 'human_bytes_sig_figs' ) )
         
         self._do_macos_debug_dialog_menus.setChecked( self._new_options.GetBoolean( 'do_macos_debug_dialog_menus' ) )
-        
         self._use_qt_file_dialogs.setChecked( self._new_options.GetBoolean( 'use_qt_file_dialogs' ) )
-        
         self._remember_options_window_panel.setChecked( self._new_options.GetBoolean( 'remember_options_window_panel' ) )
         
         self._options_search_bar_top_of_window.SetValue( self._new_options.GetBoolean( 'options_search_bar_top_of_window' ) )
         
         self._disable_get_safe_position_test.setChecked( self._new_options.GetBoolean( 'disable_get_safe_position_test' ) )
-        
         self._fuzzy_relocate_on_get_safe_position_test.setChecked( self._new_options.GetBoolean( 'fuzzy_relocate_on_get_safe_position_test' ) )
         
         self._fuzzy_relocate_on_get_safe_position_test_only_for_self_sizing_media_viewer_canvas.setChecked( self._new_options.GetBoolean( 'fuzzy_relocate_on_get_safe_position_test_only_for_self_sizing_media_viewer_canvas' ) )
@@ -161,13 +170,16 @@ class GUIPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         rows = []
         
         rows.append( ( 'Prefer ISO time ("2018-03-01 12:40:23") to "5 days ago": ', self._always_show_iso_time ) )
+        rows.append( ( 'Force that hitting Enter/Return on radio button lists triggers a dialog ok: ', self._force_enter_on_radio_buttons_to_do_dialog_ok ) )
         rows.append( ( 'Mouse wheel can "scroll" through menu buttons: ', self._menu_choice_buttons_can_mouse_scroll ) )
         rows.append( ( 'Use Native MenuBar (if available): ', self._use_native_menubar ) )
-        rows.append( ( 'EXPERIMENTAL: Bytes strings >1KB pseudo significant figures: ', self._human_bytes_sig_figs ) )
-        rows.append( ( 'BUGFIX: If on macOS, show dialog menus in a debug menu: ', self._do_macos_debug_dialog_menus ) )
-        rows.append( ( 'ANTI-CRASH BUGFIX: Use Qt file/directory selection dialogs, rather than OS native: ', self._use_qt_file_dialogs ) )
         rows.append( ( 'Remember last open options panel in this window: ', self._remember_options_window_panel ) )
         rows.append( ( 'Put the options search bar at the: ', self._options_search_bar_top_of_window ) )
+        rows.append( ( 'TEST: Use your locale for integer rendering: ', self._use_qt_locale_for_human_int ) )
+        rows.append( ( 'EXPERIMENTAL: Bytes strings >1KB pseudo significant figures: ', self._human_bytes_sig_figs ) )
+        rows.append( ( 'BUGFIX: Set child windows as non-tool flagged: ', self._not_make_child_frames_qt_tool ) )
+        rows.append( ( 'BUGFIX: If on macOS, show dialog menus in a debug menu: ', self._do_macos_debug_dialog_menus ) )
+        rows.append( ( 'ANTI-CRASH BUGFIX: Use Qt file/directory selection dialogs, rather than OS native: ', self._use_qt_file_dialogs ) )
         
         gridbox = ClientGUICommon.WrapInGrid( self, rows )
         
@@ -367,6 +379,9 @@ class GUIPanel( ClientGUIOptionsPanelBase.OptionsPagePanel ):
         HC.options[ 'confirm_client_exit' ] = self._confirm_client_exit.isChecked()
         
         self._new_options.SetBoolean( 'always_show_iso_time', self._always_show_iso_time.isChecked() )
+        self._new_options.SetBoolean( 'make_child_frames_qt_tool', not self._not_make_child_frames_qt_tool.isChecked() )
+        self._new_options.SetBoolean( 'use_qt_locale_for_human_int', self._use_qt_locale_for_human_int.isChecked() )
+        self._new_options.SetBoolean( 'force_enter_on_radio_buttons_to_do_dialog_ok', self._force_enter_on_radio_buttons_to_do_dialog_ok.isChecked() )
         self._new_options.SetBoolean( 'menu_choice_buttons_can_mouse_scroll', self._menu_choice_buttons_can_mouse_scroll.isChecked() )
         self._new_options.SetBoolean( 'use_native_menubar', self._use_native_menubar.isChecked() )
         

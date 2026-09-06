@@ -9,13 +9,9 @@ import time
 import traceback
 import typing
 
-from qtpy import QtCore as QC
-from qtpy import QtWidgets as QW
-
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusDB
-from hydrus.core import HydrusDBBase
 from hydrus.core import HydrusExceptions
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusLists
@@ -76,7 +72,6 @@ from hydrus.client.db import ClientDBTagSearch
 from hydrus.client.db import ClientDBTagSiblings
 from hydrus.client.db import ClientDBTagSuggestions
 from hydrus.client.db import ClientDBURLMap
-from hydrus.client.duplicates import ClientDuplicates
 from hydrus.client.files import ClientFilesMaintenance
 from hydrus.client.importing import ClientImportFiles
 from hydrus.client.metadata import ClientContentUpdates
@@ -220,22 +215,6 @@ def report_speed_to_log( precise_timestamp, num_rows, row_name ):
     summary = 'processed ' + HydrusNumbers.ToHumanInt( num_rows ) + ' ' + row_name + ' at ' + rows_s + ' rows/s'
     
     HydrusData.Print( summary )
-    
-
-class JobDatabaseClient( HydrusDBBase.JobDatabase ):
-    
-    def _DoDelayedResultRelief( self ):
-        
-        if HG.db_ui_hang_relief_mode:
-            
-            if QC.QThread.currentThread() == CG.client_controller.main_qt_thread:
-                
-                HydrusData.Print( 'ui-hang event processing: begin' )
-                QW.QApplication.instance().processEvents()
-                HydrusData.Print( 'ui-hang event processing: end' )
-                
-            
-        
     
 
 class DB( HydrusDB.HydrusDB ):
@@ -574,7 +553,7 @@ class DB( HydrusDB.HydrusDB ):
             ( cache_ideal_tag_siblings_lookup_table_name, cache_actual_tag_siblings_lookup_table_name ) = ClientDBTagSiblings.GenerateTagSiblingsLookupCacheTableNames( tag_service_id )
             ( cache_ideal_tag_parents_lookup_table_name, cache_actual_tag_parents_lookup_table_name ) = ClientDBTagParents.GenerateTagParentsLookupCacheTableNames( tag_service_id )
             
-            def GetWeightedSiblingRow( sibling_rows, index ):
+            def GetWeightedSiblingRow( sibling_rows: set[ tuple[ int, int ] ], index ) -> tuple[ int, tuple[ int, int ] ]:
                 
                 # when you change the sibling A->B in the _lookup table_:
                 # you need to add/remove about A number of mappings for B and all it implies. the weight is: A * count( all the B->X implications )
@@ -594,7 +573,7 @@ class DB( HydrusDB.HydrusDB ):
                 return weight_and_rows[ index ]
                 
             
-            def GetWeightedParentRow( parent_rows, index ):
+            def GetWeightedParentRow( parent_rows: set[ tuple[ int, int ] ], index ) -> tuple[ int, tuple[ int, int ] ]:
                 
                 # when you change the parent A->B in the _lookup table_:
                 # you need to add/remove mappings (of B) for all instances of A and all that implies it. the weight is: sum( all the X->A implications )
@@ -622,12 +601,15 @@ class DB( HydrusDB.HydrusDB ):
             
             possibly_affected_tag_ids = set()
             
+            previous_chain_tag_ids_to_implied_by = {}
+            after_chain_tag_ids_to_implied_by = {}
+            
             if len( some_removee_sibling_rows ) + len( some_removee_parent_rows ) > 0:
                 
-                smallest_sibling_weight = None
-                smallest_sibling_row = None
-                smallest_parent_weight = None
-                smallest_parent_row = None
+                smallest_sibling_weight: int | None = None
+                smallest_sibling_row: tuple[ int, int ] | None = None
+                smallest_parent_weight: int | None = None
+                smallest_parent_row: tuple[ int, int ] | None = None
                 
                 if len( some_removee_sibling_rows ) > 0:
                     
@@ -709,10 +691,10 @@ class DB( HydrusDB.HydrusDB ):
                 
                 if len( some_addee_sibling_rows ) + len( some_addee_parent_rows ) > 0:
                     
-                    largest_sibling_weight = None
-                    largest_sibling_row = None
-                    largest_parent_weight = None
-                    largest_parent_row = None
+                    largest_sibling_weight: int | None = None
+                    largest_sibling_row: tuple[ int, int ] | None = None
+                    largest_parent_weight: int | None = None
+                    largest_parent_row: tuple[ int, int ] | None = None
                     
                     if len( some_addee_sibling_rows ) > 0:
                         
@@ -1670,11 +1652,6 @@ class DB( HydrusDB.HydrusDB ):
         self.modules_media_results.ForceRefreshFileInfoManagers( hash_ids_to_hashes )
         
     
-    def _GenerateDBJob( self, job_type, synchronous, action, *args, **kwargs ):
-        
-        return JobDatabaseClient( job_type, synchronous, action, *args, **kwargs )
-        
-    
     def _GetBonedStats( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext = None, job_status = None ):
         
         if job_status is None:
@@ -1936,21 +1913,22 @@ class DB( HydrusDB.HydrusDB ):
         
         #
         
-        # first grab all the alternate groups that actually have more than one media id in them
-        useful_alternates_group_ids = { alternates_group_id for ( alternates_group_id, count ) in self._Execute( f'SELECT alternates_group_id, COUNT( * ) FROM duplicate_files CROSS JOIN alternate_file_group_members USING ( media_id ) GROUP BY alternates_group_id;' ) if count > 1 }
+        # first we fetch the unique duplicate media ids
         
-        boned_stats[ 'total_alternate_groups' ] = len( useful_alternates_group_ids )
+        total_duplicate_files = 0
+        duplicate_media_ids_to_counts = dict()
         
-        with self._MakeTemporaryIntegerTable( useful_alternates_group_ids, 'alternates_group_id' ) as temp_alternates_group_ids_table_name:
+        for ( media_id, count ) in self._Execute( f'SELECT media_id, COUNT( * ) FROM {current_files_table_name} CROSS JOIN duplicate_file_members USING ( hash_id ) GROUP BY media_id;' ):
             
-            total_alternate_files = sum( ( count for ( alternates_group_id, count ) in self._Execute( f'SELECT alternates_group_id, COUNT( * ) FROM {current_files_table_name} CROSS JOIN duplicate_file_members USING ( hash_id ) CROSS JOIN alternate_file_group_members USING ( media_id ) CROSS JOIN {temp_alternates_group_ids_table_name} USING ( alternates_group_id ) GROUP BY alternates_group_id;' ) if count > 1 ) )
+            # yes, register before the count check since we use this later for alternates business
+            duplicate_media_ids_to_counts[ media_id ] = count
             
-        
-        boned_stats[ 'total_alternate_files' ] = total_alternate_files
-        
-        if job_status.IsCancelled():
+            if count <= 1:
+                
+                continue
+                
             
-            return boned_stats
+            total_duplicate_files += 1
             
         
         total_duplicate_files = sum( ( count for ( media_id, count ) in self._Execute( f'SELECT media_id, COUNT( * ) FROM {current_files_table_name} CROSS JOIN duplicate_file_members USING ( hash_id ) GROUP BY media_id;' ) if count > 1 ) )
@@ -1962,14 +1940,36 @@ class DB( HydrusDB.HydrusDB ):
             return boned_stats
             
         
-        return boned_stats
+        #
         
-        # TODO: fix this, it takes ages sometimes IRL
-        table_join = self.modules_files_duplicates_updates.GetPotentialDuplicatePairsTableJoinOnSearchResults( db_location_context, current_files_table_name, ClientDuplicates.SIMILAR_FILES_PIXEL_DUPES_ALLOWED, max_hamming_distance = 8 )
+        # now we feed the unique duplicate media ids into this so we can get a nice alternates number
+        # don't be tempted to do a big query starting from current_files_table_name--you'll probably get the same media_id multiple times and it'll mess up your count. KISS
+        # also, there's a tricky interplay between 'this alternate group has >1 members' and 'this alternate group has >1 files'. the counts here are counting and doing logic on slightly different things, so we count manually
         
-        ( total_potential_pairs, ) = self._Execute( f'SELECT COUNT( * ) FROM ( SELECT DISTINCT smaller_media_id, larger_media_id FROM {table_join} );' ).fetchone()
+        total_alternate_groups = 0
+        total_alternate_files = 0
         
-        boned_stats[ 'total_potential_pairs' ] = total_potential_pairs
+        with self._MakeTemporaryIntegerTable( set( duplicate_media_ids_to_counts.keys() ), 'media_id' ) as duplicate_media_ids_temp_table_name:
+            
+            alternates_group_ids_to_media_ids = HydrusData.BuildKeyToSetDict( self._Execute( f'SELECT alternates_group_id, media_id FROM {duplicate_media_ids_temp_table_name} CROSS JOIN duplicate_files USING ( media_id ) CROSS JOIN alternate_file_group_members USING ( media_id );' ) )
+            
+            for ( alternates_group_id, media_ids ) in alternates_group_ids_to_media_ids.items():
+                
+                if len( media_ids ) <= 1:
+                    
+                    continue
+                    
+                
+                total_alternate_groups += 1
+                
+                # ok this alternates group has more than one member, we are good. but how many files within our sample does it have?
+                
+                total_alternate_files += sum( ( duplicate_media_ids_to_counts[ media_id ] for media_id in media_ids ) )
+                
+            
+        
+        boned_stats[ 'total_alternate_groups' ] = total_alternate_groups
+        boned_stats[ 'total_alternate_files' ] = total_alternate_files
         
         if job_status.IsCancelled():
             
@@ -3710,7 +3710,7 @@ class DB( HydrusDB.HydrusDB ):
             
             if pixel_hash is None:
                 
-                self.modules_similar_files.ClearPixelHash( hash_id )
+                self.modules_similar_files.DisassociatePixelHash( hash_id )
                 
             else:
                 
@@ -3723,7 +3723,11 @@ class DB( HydrusDB.HydrusDB ):
             
             perceptual_hashes = file_import_job.GetPerceptualHashes()
             
-            if perceptual_hashes is not None:
+            if perceptual_hashes is None:
+                
+                self.modules_similar_files.SetPerceptualHashes( hash_id, set() )
+                
+            else:
                 
                 if HG.file_import_report_mode:
                     
@@ -3748,7 +3752,10 @@ class DB( HydrusDB.HydrusDB ):
             
             self.modules_files_metadata_basic.SetHasTransparency( hash_id, file_import_job.HasTransparency() )
             self.modules_files_metadata_basic.SetHasEXIF( hash_id, file_import_job.HasEXIF() )
+            self.modules_files_metadata_basic.SetHasXMP( hash_id, file_import_job.HasXMP() )
+            self.modules_files_metadata_basic.SetHasIPTC( hash_id, file_import_job.HasIPTC() )
             self.modules_files_metadata_basic.SetHasHumanReadableEmbeddedMetadata( hash_id, file_import_job.HasHumanReadableEmbeddedMetadata() )
+            self.modules_files_metadata_basic.SetHasSoftwareSource( hash_id, file_import_job.HasSoftwareSource() )
             self.modules_files_metadata_basic.SetHasICCProfile( hash_id, file_import_job.HasICCProfile() )
             self.modules_files_metadata_basic.SetBlurhash( hash_id, file_import_job.GetBlurhash() )
             
@@ -4711,7 +4718,7 @@ class DB( HydrusDB.HydrusDB ):
         location_context: ClientLocation.LocationContext,
         tag_service_key,
         tag_filter: HydrusTags.TagFilter,
-        hashes: collections.abc.Collection[ bytes ],
+        hashes: collections.abc.Collection[ bytes ] | None,
         content_statuses: collections.abc.Collection[ int ]
     ):
         
@@ -6537,11 +6544,6 @@ class DB( HydrusDB.HydrusDB ):
             
             file_service_ids = self.modules_services.GetServiceIds( HC.FILE_SERVICES_WITH_SPECIFIC_TAG_LOOKUP_CACHES )
             
-            def status_hook( s ):
-                
-                job_status.SetStatusText( s, 2 )
-                
-            
             for ( file_service_id, tag_service_id ) in itertools.product( file_service_ids, tag_service_ids ):
                 
                 if job_status.IsCancelled():
@@ -7055,188 +7057,6 @@ class DB( HydrusDB.HydrusDB ):
         #       v592 PERMISSION CORRECTION UPDATE CODE
         # 
         
-        if version == 611:
-            
-            if not self._TableExists( 'main.duplicate_files_auto_resolution_rules' ):
-                
-                self._Execute( 'CREATE TABLE IF NOT EXISTS main.duplicate_files_auto_resolution_rules ( rule_id INTEGER PRIMARY KEY, actioned_pair_count INTEGER DEFAULT 0 );' )
-                
-            
-            if not self._TableExists( 'main.duplicates_files_auto_resolution_rule_count_cache' ):
-                
-                self._Execute( 'CREATE TABLE IF NOT EXISTS main.duplicates_files_auto_resolution_rule_count_cache ( rule_id INTEGER, status INTEGER, status_count INTEGER, PRIMARY KEY ( rule_id, status ) );' )
-                
-            
-            try:
-                
-                self._controller.frame_splash_status.SetSubtext( f'scheduling some maintenance work' )
-                
-                all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
-                
-                with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
-                    
-                    hash_ids = self._STS( self._Execute( f'SELECT hash_id FROM {temp_hash_ids_table_name} CROSS JOIN files_info USING ( hash_id ) WHERE mime = ?;', ( HC.IMAGE_JXL, ) ) )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_TRANSPARENCY )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_EXIF )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_ICC_PROFILE )
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Some file maintenance failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 615:
-            
-            found_some = False
-            
-            from hydrus.client.duplicates import ClientDuplicatesAutoResolution
-            
-            if self._TableExists( 'main.duplicate_files_auto_resolution_rules' ):
-                
-                try:
-                    
-                    result = self._Execute( 'SELECT actioned_pair_count FROM duplicate_files_auto_resolution_rules;' ).fetchone()
-                    
-                    do_it = True
-                    
-                except Exception as e:
-                    
-                    do_it = False
-                    
-                
-                if do_it:
-                    
-                    rule_ids = self._STS( self._Execute( 'SELECT rule_id FROM duplicate_files_auto_resolution_rules;' ) )
-                    
-                    for rule_id in rule_ids:
-                        
-                        found_some = True
-                        
-                        table_core = f'duplicate_files_auto_resolution_pair_decisions_{rule_id}'
-                        
-                        for status in (
-                            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_NOT_SEARCHED,
-                            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_BUT_NOT_TESTED,
-                            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_DOES_NOT_MATCH_SEARCH,
-                            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_MATCHES_SEARCH_FAILED_TEST,
-                            ClientDuplicatesAutoResolution.DUPLICATE_STATUS_ACTIONED
-                        ):
-                            
-                            table_name = f'{table_core}_{status}'
-                            
-                            self._Execute( f'DROP TABLE IF EXISTS {table_name};' )
-                            
-                        
-                    
-                    self._Execute( 'DROP TABLE duplicate_files_auto_resolution_rules;' )
-                    
-                    self._Execute( 'DELETE FROM duplicates_files_auto_resolution_rule_count_cache;' )
-                    
-                    self.modules_serialisable.DeleteJSONDumpNamed( HydrusSerialisable.SERIALISABLE_TYPE_DUPLICATES_AUTO_RESOLUTION_RULE )
-                    
-                    if found_some:
-                        
-                        def notify_deleting_auto_resolution_rules():
-                            
-                            message = 'Hey, it looks like you participated in the duplicates auto-resolution test--thank you!\n\nUnfortunately, I have made some database changes that are incompatible with the old system, and I have to delete the old jpeg/png rule now. Sorry!'
-                            
-                            from hydrus.client.gui import ClientGUIDialogsMessage
-                            
-                            ClientGUIDialogsMessage.ShowInformation( CG.client_controller.GetMainTLW(), message )
-                            
-                        
-                        self._controller.CallBlockingToQtTLW( notify_deleting_auto_resolution_rules )
-                        
-                    
-                    self._Execute( 'CREATE TABLE IF NOT EXISTS main.duplicate_files_auto_resolution_rules ( rule_id INTEGER PRIMARY KEY );' )
-                    
-                
-            
-        
-        if version == 617:
-            
-            try:
-                
-                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
-                
-                try:
-                    
-                    user_wants_us_to_leave_it_on = new_options.GetBoolean( 'always_show_system_everything' )
-                    
-                except Exception as e:
-                    
-                    user_wants_us_to_leave_it_on = False
-                    
-                
-                if not user_wants_us_to_leave_it_on:
-                    
-                    results = self._GetServiceInfo( CC.COMBINED_LOCAL_FILE_DOMAINS_SERVICE_KEY )
-                    
-                    if results.get( HC.SERVICE_INFO_NUM_FILES, 0 ) > 10000:
-                        
-                        new_options.SetBoolean( 'show_system_everything', False )
-                        
-                        self.modules_serialisable.SetJSONDump( new_options )
-                        
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update your options failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
-        if version == 618:
-            
-            try:
-                
-                self._RepairInvalidTags()
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to scan and fix bad tags in the database failed! You can re-attempt this job under _database->check and repair->fix invalid tags_. Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-            try:
-                
-                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
-                
-                current_value = new_options.GetInteger( 'ms_to_wait_between_physical_file_deletes' )
-                
-                if current_value == 250:
-                    
-                    new_options.SetInteger( 'ms_to_wait_between_physical_file_deletes', 600 )
-                    
-                    self.modules_serialisable.SetJSONDump( new_options )
-                    
-                
-            except Exception as e:
-                
-                HydrusData.PrintException( e )
-                
-                message = 'Trying to update your options failed! Please let hydrus dev know!'
-                
-                self.pub_initial_message( message )
-                
-            
-        
         if version == 619:
             
             try:
@@ -7480,7 +7300,7 @@ class DB( HydrusDB.HydrusDB ):
                 self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_METADATA )
                 self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
                 self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_PIXEL_HASH )
-                self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_SIMILAR_FILES_METADATA )
+                self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_PERCEPTUAL_HASHES )
                 
             except Exception as e:
                 
@@ -7778,13 +7598,14 @@ class DB( HydrusDB.HydrusDB ):
         
         if version == 643:
             
-            def ask_what_to_do_transparency_recheck_644( num_transparent_files ):
+            def ask_what_to_do_transparency_recheck_644( num_transparent_files: int ):
                 
                 message = f'Hey, I have changed how I detect transparency in files. Files that only have a barely-noticeable handful of 98% opaque pixels are now considered non-transparent. You have {HydrusNumbers.ToHumanInt(num_transparent_files)} images and animations that are currently considered as having transparency. Do you want to schedule a transparency-rescan for all of them to clear out the previous false positives?'
                 message += '\n' * 2
                 message += 'I recommend you say yes unless the number here is truly huge and you do not want hydrus to be eventually loading all those files (e.g. if your files are stored in the cloud and you need to keep bandwidth usage down).'
                 
                 from hydrus.client.gui import ClientGUIDialogsQuick
+                from qtpy import QtWidgets as QW
                 
                 result = ClientGUIDialogsQuick.GetYesNo( CG.client_controller.GetMainTLW(), message, title = 'Re-do transparency check?', yes_label = 'yes, re-scan these files', no_label = 'no, do not do it' )
                 
@@ -8357,19 +8178,180 @@ class DB( HydrusDB.HydrusDB ):
                 
             
         
-        if False: # on version where we are happy with human-readable file metadata. do not want to pull the trigger on this big job until we are content
+        if version == 679:
             
             try:
                 
-                self._controller.frame_splash_status.SetSubtext( f'scheduling embedded text maintenance' )
+                self._controller.frame_splash_status.SetSubtext( f'scheduling some maintenance work' )
+                
+                ( current_files_table_name, deleted_files_table_name, pending_files_table_name, petitioned_files_table_name ) = ClientDBFilesStorage.GenerateFilesTableNames( self.modules_services.combined_local_file_domains_service_id )
+                
+                # broke cbz thumbs by accident ~2026-07-05
+                july_5_timestamp_ms = 1783227600000
+                
+                hash_ids = self._STS( self._Execute( f'SELECT hash_id FROM {current_files_table_name} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {HydrusLists.SplayListForDB( ( HC.APPLICATION_CBZ, ) )} AND timestamp_ms > ?;', ( july_5_timestamp_ms, ) ) )
+                
+                self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FORCE_THUMBNAIL )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Some file maintenance failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 681:
+            
+            if not self._TableExists( 'has_xmp' ):
+                
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.has_xmp ( hash_id INTEGER PRIMARY KEY );' )
+                
+            
+            if not self._TableExists( 'has_iptc' ):
+                
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.has_iptc ( hash_id INTEGER PRIMARY KEY );' )
+                
+            
+            if not self._TableExists( 'has_software_source' ):
+                
+                self._Execute( 'CREATE TABLE IF NOT EXISTS main.has_software_source ( hash_id INTEGER PRIMARY KEY );' )
+                
+            
+            try:
+                
+                self._controller.frame_splash_status.SetSubtext( f'clearing out location-orphaned potential duplicate pairs' )
+                
+                self.modules_files_duplicates_updates.ResyncPotentialPairsToHydrusLocalFileStorage()
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Some duplicate maintenance failed to work on update! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 682:
+            
+            try:
+                
+                def ask_what_to_do_metadata_regen_682():
+                    
+                    message = 'Hey, I have created some new metadata flags such that "human-readable" metadata is more useful and we discover new XMP, IPTC, and software/source information. I want to schedule some regeneration work for pretty much all your images.'
+                    message += '\n' * 2
+                    message += 'I would like to do it for everything you have, which could be millions of images and may take months of slow background work to eventually clear (it usually works at 3-30 files/minute). I still recommend clicking yes, even if you do have many files. If you want to handle this yourself, or your files are stored on the cloud and you do not want to spend bandwidth slowly loading them, just click no.'
+                    
+                    from hydrus.client.gui import ClientGUIDialogsQuick
+                    from qtpy import QtWidgets as QW
+                    
+                    result = ClientGUIDialogsQuick.GetYesNo( CG.client_controller.GetMainTLW(), message, title = 'Check all images for new metadata?', yes_label = 'yes, re-scan the images', no_label = 'no, do not do it' )
+                    
+                    return result == QW.QDialog.DialogCode.Accepted
+                    
+                
+                self._controller.frame_splash_status.SetSubtext( f'scheduling file metadata regen maintenance' )
+                
+                do_it = self._controller.CallBlockingToQtTLW( ask_what_to_do_metadata_regen_682 )
+                
+                if do_it:
+                    
+                    # xmp, iptc, software-source, human-readable
+                    
+                    all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
+                    
+                    with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
+                        
+                        self._controller.frame_splash_status.SetSubtext( f'scheduling xmp' )
+                        
+                        hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_CAN_HAVE_XMP ) ) ) )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_XMP )
+                        
+                        self._controller.frame_splash_status.SetSubtext( f'scheduling iptc' )
+                        
+                        hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_CAN_HAVE_IPTC ) ) ) )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_IPTC )
+                        
+                        self._controller.frame_splash_status.SetSubtext( f'scheduling software/source' )
+                        
+                        hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_CAN_HAVE_SOFTWARE_SOURCE ) ) ) )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_SOFTWARE_SOURCE )
+                        
+                        self._controller.frame_splash_status.SetSubtext( f'scheduling human-readable' )
+                        
+                        hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_CAN_HAVE_HUMAN_READABLE_EMBEDDED_METADATA ) ) ) )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA )
+                        
+                        self._controller.frame_splash_status.SetSubtext( f'all good' )
+                        
+                    
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Some file maintenance failed to schedule! This is not super important, but hydev would be interested in seeing the error that was printed to the log.'
+                
+                self.pub_initial_message( message )
+                
+            
+        
+        if version == 685:
+            
+            try:
+                
+                new_options = self.modules_serialisable.GetJSONDump( HydrusSerialisable.SERIALISABLE_TYPE_CLIENT_OPTIONS )
+                
+                new_options.SetBoolean( 'test_thumbnails_graphics_view', True )
+                new_options.SetBoolean( 'make_child_frames_qt_tool', True )
+                new_options.SetBoolean( 'force_enter_on_radio_buttons_to_do_dialog_ok', True )
+                
+                self.modules_serialisable.SetJSONDump( new_options )
+                
+            except Exception as e:
+                
+                HydrusData.PrintException( e )
+                
+                message = 'Trying to update your options failed! Please let hydrus dev know!'
+                
+                self.pub_initial_message( message )
+                
+            
+            try:
                 
                 all_local_hash_ids = self.modules_files_storage.GetCurrentHashIdsList( self.modules_services.hydrus_local_file_storage_service_id )
                 
                 with self._MakeTemporaryIntegerTable( all_local_hash_ids, 'hash_id' ) as temp_hash_ids_table_name:
                     
-                    hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN has_human_readable_embedded_metadata USING ( hash_id ) CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.IMAGES ) ) ) )
+                    self._controller.frame_splash_status.SetSubtext( f'scheduling similar file search data fixes' )
                     
-                    self.modules_files_maintenance_queue.AddJobs( hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA )
+                    hash_ids = self._STS( self._Execute( 'SELECT hash_id FROM {} CROSS JOIN files_info USING ( hash_id ) WHERE mime IN {};'.format( temp_hash_ids_table_name, HydrusLists.SplayListForDB( HC.FILES_THAT_HAVE_PERCEPTUAL_HASH ) ) ) )
+                    
+                    with self._MakeTemporaryIntegerTable( hash_ids, 'hash_id' ) as temp_hash_ids_table_name_for_phashes:
+                        
+                        # these are files that are delisted currently and unexpectedly, including a bug of previously deleted files that were re-imported
+                        delisted_hash_ids = self._STS( self._Execute( f'SELECT hash_id FROM {temp_hash_ids_table_name_for_phashes} WHERE NOT EXISTS ( SELECT 1 FROM shape_search_cache WHERE hash_id = {temp_hash_ids_table_name_for_phashes}.hash_id );' ) )
+                        
+                        HydrusData.Print( f'Found {HydrusNumbers.ToHumanInt(len(delisted_hash_ids))} files that might be in duplicate file pair search but are not.' )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( delisted_hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_CHECK_POTENTIAL_DUPLICATE_PAIR_SEARCH_MEMBERSHIP )
+                        
+                        # these are files that should have phashes but do not; probably blank files that were previously discarded
+                        # also includes non-renderable PSDs; no worries
+                        blank_hash_ids = self._STS( self._Execute( f'SELECT hash_id FROM {temp_hash_ids_table_name_for_phashes} WHERE NOT EXISTS ( SELECT 1 FROM shape_perceptual_hash_map WHERE hash_id = {temp_hash_ids_table_name_for_phashes}.hash_id );' ) )
+                        
+                        HydrusData.Print( f'Found {HydrusNumbers.ToHumanInt(len(blank_hash_ids))} files that should have phashes but did not (probably blank squares).' )
+                        
+                        self.modules_files_maintenance_queue.AddJobs( blank_hash_ids, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_PERCEPTUAL_HASHES )
+                        
                     
                 
             except Exception as e:
@@ -8390,7 +8372,7 @@ class DB( HydrusDB.HydrusDB ):
         
         self._Execute( 'UPDATE version SET version = ?;', ( current_version, ) )
         
-        versions_that_could_do_with_a_new_venv = { 670 }
+        versions_that_could_do_with_a_new_venv = { 670, 681 }
         
         if HC.RUNNING_FROM_SOURCE and HC.GOT_A_NORMAL_LOOKING_VENV and current_version in versions_that_could_do_with_a_new_venv:
             

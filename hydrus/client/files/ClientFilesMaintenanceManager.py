@@ -23,6 +23,7 @@ from hydrus.client import ClientDaemons
 from hydrus.client import ClientGlobals as CG
 from hydrus.client.files import ClientFiles
 from hydrus.client.files import ClientFilesMaintenance
+from hydrus.client.files.images import ClientImageMetadata
 from hydrus.client.files.images import ClientImagePerceptualHashes
 
 from hydrus.client import ClientThreading
@@ -519,6 +520,90 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
         
     
+    def _HasXMP( self, media_result ):
+        
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
+        
+        if mime not in HC.FILES_THAT_CAN_HAVE_XMP:
+            
+            return False
+            
+        
+        try:
+            
+            path = self._controller.client_files_manager.GetFilePath( hash, mime )
+            
+            try:
+                
+                raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
+                
+                try:
+                    
+                    has_xmp = ClientImageMetadata.HasXMP( raw_pil_image )
+                    
+                finally:
+                    
+                    raw_pil_image.close()
+                    
+                
+            except Exception as e:
+                
+                has_xmp = False
+                
+            
+            additional_data = has_xmp
+            
+            return additional_data
+            
+        except HydrusExceptions.FileMissingException:
+            
+            return None
+            
+        
+    
+    def _HasIPTC( self, media_result ):
+        
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
+        
+        if mime not in HC.FILES_THAT_CAN_HAVE_IPTC:
+            
+            return False
+            
+        
+        try:
+            
+            path = self._controller.client_files_manager.GetFilePath( hash, mime )
+            
+            try:
+                
+                raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
+                
+                try:
+                    
+                    has_iptc = ClientImageMetadata.HasIPTC( raw_pil_image )
+                    
+                finally:
+                    
+                    raw_pil_image.close()
+                    
+                
+            except Exception as e:
+                
+                has_iptc = False
+                
+            
+            additional_data = has_iptc
+            
+            return additional_data
+            
+        except HydrusExceptions.FileMissingException:
+            
+            return None
+            
+        
+    
     def _HasHumanReadableEmbeddedMetadata( self, media_result ):
         
         hash = media_result.GetHash()
@@ -536,6 +621,48 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             has_human_readable_embedded_metadata = ClientFiles.HasHumanReadableEmbeddedMetadata( path, mime )
             
             additional_data = has_human_readable_embedded_metadata
+            
+            return additional_data
+            
+        except HydrusExceptions.FileMissingException:
+            
+            return None
+            
+        
+    
+    def _HasSoftwareSource( self, media_result ):
+        
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
+        
+        if mime not in HC.FILES_THAT_CAN_HAVE_SOFTWARE_SOURCE:
+            
+            return False
+            
+        
+        try:
+            
+            path = self._controller.client_files_manager.GetFilePath( hash, mime )
+            
+            try:
+                
+                raw_pil_image = HydrusImageOpening.RawOpenPILImage( path )
+                
+                try:
+                    
+                    has_software_source = HydrusImageMetadata.HasSoftwareSource( raw_pil_image )
+                    
+                finally:
+                    
+                    raw_pil_image.close()
+                    
+                
+            except Exception as e:
+                
+                has_software_source = False
+                
+            
+            additional_data = has_software_source
             
             return additional_data
             
@@ -621,6 +748,36 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             return additional_data
             
         except HydrusExceptions.FileMissingException:
+            
+            return None
+            
+        
+    
+    def _RegenBlurhash( self, media_result ):
+        
+        if media_result.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
+            
+            return None
+            
+        
+        try:
+            
+            thumbnail_path = self._controller.client_files_manager.GetThumbnailPath( media_result )
+            
+        except HydrusExceptions.FileMissingException as e:
+            
+            return None
+            
+        
+        try:
+            
+            thumbnail_mime = HydrusFileHandling.GetThumbnailMime( thumbnail_path )
+            
+            numpy_image = HydrusImageHandling.GenerateNumPyImage( thumbnail_path, thumbnail_mime )
+            
+            return HydrusBlurhash.GetBlurhashFromNumPy( numpy_image )
+            
+        except Exception as e:
             
             return None
             
@@ -760,6 +917,32 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
         
     
+    def _RegenPerceptualHashes( self, media_result ):
+        
+        hash = media_result.GetHash()
+        mime = media_result.GetMime()
+        
+        # do not have to trigger a 'check we are in the system' job here; the set-phashes job at db level handles it KISS
+        
+        if mime not in HC.FILES_THAT_HAVE_PERCEPTUAL_HASH:
+            
+            return []
+            
+        
+        try:
+            
+            path = self._controller.client_files_manager.GetFilePath( hash, mime )
+            
+        except HydrusExceptions.FileMissingException:
+            
+            return None
+            
+        
+        perceptual_hashes = ClientImagePerceptualHashes.GenerateShapePerceptualHashes( path, mime )
+        
+        return perceptual_hashes
+        
+    
     def _RegenPixelHash( self, media_result ):
         
         hash = media_result.GetHash()
@@ -798,63 +981,6 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
             
             return None
             
-        
-    
-    def _RegenBlurhash( self, media_result ):
-        
-        if media_result.GetMime() not in HC.MIMES_WITH_THUMBNAILS:
-            
-            return None
-            
-        
-        try:
-            
-            thumbnail_path = self._controller.client_files_manager.GetThumbnailPath( media_result )
-            
-        except HydrusExceptions.FileMissingException as e:
-            
-            return None
-            
-        
-        try:
-            
-            thumbnail_mime = HydrusFileHandling.GetThumbnailMime( thumbnail_path )
-            
-            numpy_image = HydrusImageHandling.GenerateNumPyImage( thumbnail_path, thumbnail_mime )
-            
-            return HydrusBlurhash.GetBlurhashFromNumPy( numpy_image )
-            
-        except Exception as e:
-            
-            return None
-            
-        
-    
-    
-    def _RegenSimilarFilesMetadata( self, media_result ):
-        
-        hash = media_result.GetHash()
-        mime = media_result.GetMime()
-        
-        if mime not in HC.FILES_THAT_HAVE_PERCEPTUAL_HASH:
-            
-            self._controller.WriteSynchronous( 'file_maintenance_add_jobs_hashes', { hash }, ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_CHECK_SIMILAR_FILES_MEMBERSHIP )
-            
-            return []
-            
-        
-        try:
-            
-            path = self._controller.client_files_manager.GetFilePath( hash, mime )
-            
-        except HydrusExceptions.FileMissingException:
-            
-            return None
-            
-        
-        perceptual_hashes = ClientImagePerceptualHashes.GenerateUsefulShapePerceptualHashes( path, mime )
-        
-        return perceptual_hashes
         
     
     def _ReInitialiseWorkRules( self ):
@@ -941,9 +1067,21 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                             
                             additional_data = self._HasEXIF( media_result )
                             
+                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_XMP:
+                            
+                            additional_data = self._HasXMP( media_result )
+                            
+                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_IPTC:
+                            
+                            additional_data = self._HasIPTC( media_result )
+                            
                         elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_HUMAN_READABLE_EMBEDDED_METADATA:
                             
                             additional_data = self._HasHumanReadableEmbeddedMetadata( media_result )
+                            
+                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_SOFTWARE_SOURCE:
+                            
+                            additional_data = self._HasSoftwareSource( media_result )
                             
                         elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FILE_HAS_ICC_PROFILE:
                             
@@ -981,13 +1119,13 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                             
                             self._DeleteNeighbourDupes( media_result )
                             
-                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_CHECK_SIMILAR_FILES_MEMBERSHIP:
+                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_CHECK_POTENTIAL_DUPLICATE_PAIR_SEARCH_MEMBERSHIP:
                             
                             additional_data = self._CheckSimilarFilesMembership( media_result )
                             
-                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_SIMILAR_FILES_METADATA:
+                        elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_PERCEPTUAL_HASHES:
                             
-                            additional_data = self._RegenSimilarFilesMetadata( media_result )
+                            additional_data = self._RegenPerceptualHashes( media_result )
                             
                         elif job_type == ClientFilesMaintenance.REGENERATE_FILE_DATA_JOB_FIX_PERMISSIONS:
                             
@@ -1246,7 +1384,7 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
         return 'file maintenance'
         
     
-    def _DoMainLoop( self ):
+    def _DoSingleLoop( self ):
         
         # TODO: locking on CheckShutdown is lax, let's be good and smooth it all out
         
@@ -1279,83 +1417,80 @@ class FilesMaintenanceManager( ClientDaemons.ManagerWithMainLoop ):
                 
             
         
-        while True:
+        self._CheckShutdown()
+        
+        did_work = False
+        
+        with self._maintenance_lock:
             
-            self._CheckShutdown()
+            hashes_to_job_types = self._controller.Read( 'file_maintenance_get_jobs' )
             
-            did_work = False
-            
-            with self._maintenance_lock:
+            if len( hashes_to_job_types ) > 0:
                 
-                hashes_to_job_types = self._controller.Read( 'file_maintenance_get_jobs' )
+                did_work = True
                 
-                if len( hashes_to_job_types ) > 0:
+                job_status = ClientThreading.JobStatus()
+                
+                i = 0
+                
+                try:
                     
-                    did_work = True
+                    hashes = set( hashes_to_job_types.keys() )
                     
-                    job_status = ClientThreading.JobStatus()
+                    media_results = self._controller.Read( 'media_results', hashes )
                     
-                    i = 0
+                    hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
                     
-                    try:
+                    media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
+                    
+                    for ( media_result, job_types ) in media_results_to_job_types.items():
                         
-                        hashes = set( hashes_to_job_types.keys() )
+                        wait_on_maintenance()
                         
-                        media_results = self._controller.Read( 'media_results', hashes )
-                        
-                        hashes_to_media_results = { media_result.GetHash() : media_result for media_result in media_results }
-                        
-                        media_results_to_job_types = { hashes_to_media_results[ hash ] : job_types for ( hash, job_types ) in hashes_to_job_types.items() }
-                        
-                        for ( media_result, job_types ) in media_results_to_job_types.items():
+                        if should_reset():
                             
-                            wait_on_maintenance()
-                            
-                            if should_reset():
-                                
-                                break
-                                
-                            
-                            with self._lock:
-                                
-                                self._RunJob( { media_result : job_types }, job_status )
-                                
+                            break
                             
                         
-                        time.sleep( 0.0001 )
-                        
-                        i += 1
-                        
-                        if i % 100 == 0:
+                        with self._lock:
                             
-                            self._controller.pub( 'notify_files_maintenance_done' )
+                            self._RunJob( { media_result : job_types }, job_status )
                             
                         
-                        self._CheckShutdown()
-                        
-                    finally:
+                    
+                    time.sleep( 0.0001 )
+                    
+                    i += 1
+                    
+                    if i % 100 == 0:
                         
                         self._controller.pub( 'notify_files_maintenance_done' )
                         
                     
+                    self._CheckShutdown()
+                    
+                finally:
+                    
+                    self._controller.pub( 'notify_files_maintenance_done' )
+                    
                 
             
-            if did_work:
-                
-                wake_event = self._wake_from_work_sleep_event
-                wait_time = 0.5
-                
-            else:
-                
-                wake_event = self._wake_from_idle_sleep_event
-                wait_time = 600
-                
+        
+        if did_work:
             
-            wake_event.wait( wait_time )
+            wake_event = self._wake_from_work_sleep_event
+            wait_time = 0.5
             
-            self._wake_from_work_sleep_event.clear()
-            self._wake_from_idle_sleep_event.clear()
+        else:
             
+            wake_event = self._wake_from_idle_sleep_event
+            wait_time = 600
+            
+        
+        wake_event.wait( wait_time )
+        
+        self._wake_from_work_sleep_event.clear()
+        self._wake_from_idle_sleep_event.clear()
         
     
     def NotifyNewOptions( self ):

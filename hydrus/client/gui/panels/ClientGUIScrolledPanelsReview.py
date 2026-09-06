@@ -102,7 +102,7 @@ class AboutPanel( ClientGUIScrolledPanels.ReviewPanel ):
 
 class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
     
-    def __init__( self, parent, mime: int, top_line_text: str, exif_dict: dict | None, file_text: str | None, extra_rows: list[ tuple[ str, str ] ] ):
+    def __init__( self, parent, mime: int, top_line_text: str, exif_dict: dict | None, xmp_dict: dict | None, iptc_dict: dict | None, file_text: str | None, extra_rows: list[ tuple[ str, str ] ] ):
         
         super().__init__( parent )
         
@@ -140,12 +140,30 @@ class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
         
         #
         
-        text_panel = ClientGUICommon.StaticBox( self, 'embedded text' )
+        xmp_panel = ClientGUICommon.StaticBox( self, 'XMP' )
         
-        self._text = QW.QPlainTextEdit( text_panel )
-        self._text.setReadOnly( True )
+        self._xmp_text = QW.QPlainTextEdit( xmp_panel )
+        self._xmp_text.setReadOnly( True )
         
-        text_panel.Add( self._text, CC.FLAGS_EXPAND_BOTH_WAYS )
+        xmp_panel.Add( self._xmp_text, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        #
+        
+        iptc_panel = ClientGUICommon.StaticBox( self, 'IPTC' )
+        
+        self._iptc_text = QW.QPlainTextEdit( iptc_panel )
+        self._iptc_text.setReadOnly( True )
+        
+        iptc_panel.Add( self._iptc_text, CC.FLAGS_EXPAND_BOTH_WAYS )
+        
+        #
+        
+        human_readable_text_panel = ClientGUICommon.StaticBox( self, 'human-readable text' )
+        
+        self._human_readable_text = QW.QPlainTextEdit( human_readable_text_panel )
+        self._human_readable_text.setReadOnly( True )
+        
+        human_readable_text_panel.Add( self._human_readable_text, CC.FLAGS_EXPAND_BOTH_WAYS )
         
         #
         
@@ -182,13 +200,63 @@ class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
             self._exif_listctrl.AddDatas( datas )
             
         
-        if file_text is None:
+        if xmp_dict is None:
             
-            text_panel.setVisible( False )
+            xmp_panel.setVisible( False )
             
         else:
             
-            self._text.setPlainText( file_text )
+            from hydrus.core.files.images import HydrusImageMetadata
+            
+            try:
+                
+                xmp_text = HydrusImageMetadata.render_dict( xmp_dict, 0 )
+                
+                if xmp_text is None:
+                    
+                    xmp_text = 'XMP data appears to be empty!'
+                    
+                
+            except Exception as e:
+                
+                xmp_text = f'Could not render XMP text! {e}'
+                
+            
+            self._xmp_text.setPlainText( xmp_text )
+            
+        
+        if iptc_dict is None:
+            
+            iptc_panel.setVisible( False )
+            
+        else:
+            
+            from hydrus.core.files.images import HydrusImageMetadata
+            
+            try:
+                
+                iptc_text = HydrusImageMetadata.render_dict( iptc_dict, 0 )
+                
+                if iptc_text is None:
+                    
+                    iptc_text = 'IPTC data appears to be empty!'
+                    
+                
+            except Exception as e:
+                
+                iptc_text = f'Could not render IPTC text! {e}'
+                
+            
+            self._iptc_text.setPlainText( iptc_text )
+            
+        
+        if file_text is None:
+            
+            human_readable_text_panel.setVisible( False )
+            
+        else:
+            
+            self._human_readable_text.setPlainText( file_text )
             
         
         if len( extra_rows ) == 0:
@@ -202,7 +270,9 @@ class ReviewFileEmbeddedMetadata( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.AddToLayout( vbox, top_line_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( vbox, exif_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
-        QP.AddToLayout( vbox, text_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, xmp_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, iptc_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
+        QP.AddToLayout( vbox, human_readable_text_panel, CC.FLAGS_EXPAND_BOTH_WAYS )
         QP.AddToLayout( vbox, extra_rows_panel, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self.widget().setLayout( vbox )
@@ -844,12 +914,15 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
             
             ClientGUIDialogsMessage.ShowInformation( self, 'Jobs added!' )
             
-            self._add_new_job.setEnabled( True )
-            
             self._RefreshWorkDue()
             
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable )
+        def ui_restoration_callable():
+            
+            self._add_new_job.setEnabled( True )
+            
+        
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -962,6 +1035,7 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
         def publish_callable( job_types_to_counts ):
             
             job_types = set()
+            
             self._job_types_to_due_counts = collections.Counter()
             self._job_types_to_not_due_counts = collections.Counter()
             
@@ -999,12 +1073,15 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
             
             self._run_search_st.setText( '{} files found'.format( HydrusNumbers.ToHumanInt( len( hash_ids ) ) ) )
             
-            self._run_search.setEnabled( True )
-            
             self._SetHashIds( hash_ids )
             
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable )
+        def ui_restoration_callable():
+            
+            self._run_search.setEnabled( True )
+            
+        
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1037,12 +1114,15 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
         
         def publish_callable( hash_ids ):
             
-            self._select_all_media_files.setEnabled( True )
-            
             self._SetHashIds( hash_ids )
             
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable )
+        def ui_restoration_callable():
+            
+            self._select_all_media_files.setEnabled( True )
+            
+        
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1064,12 +1144,15 @@ class ReviewFileMaintenance( ClientGUIScrolledPanels.ReviewPanel ):
         
         def publish_callable( hash_ids ):
             
-            self._select_repo_files.setEnabled( True )
-            
             self._SetHashIds( hash_ids )
             
         
-        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable )
+        def ui_restoration_callable():
+            
+            self._select_repo_files.setEnabled( True )
+            
+        
+        job = ClientGUIAsync.AsyncQtJob( self, work_callable, publish_callable, ui_restoration_callable = ui_restoration_callable )
         
         job.start()
         
@@ -1128,6 +1211,8 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         vbox = QP.VBoxLayout()
         
         self._mr_bones_text = ClientGUICommon.BetterStaticText( self )
+        self._mr_bones_text.setWordWrap( True )
+        self._mr_bones_text.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
         boned_path = HydrusStaticDir.GetStaticPath( 'boned.jpg' )
         
@@ -1136,7 +1221,7 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         self._mr_bones_image = QW.QLabel( self, pixmap = boned_qt_pixmap )
         
         QP.AddToLayout( vbox, self._mr_bones_image, CC.FLAGS_CENTER )
-        QP.AddToLayout( vbox, self._mr_bones_text, CC.FLAGS_CENTER )
+        QP.AddToLayout( vbox, self._mr_bones_text, CC.FLAGS_EXPAND_PERPENDICULAR )
         
         self._notebook = ClientGUICommon.BetterNotebook( self )
         
@@ -1183,8 +1268,6 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
         panel_vbox = QP.VBoxLayout()
         
-        self._potentials_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
-        self._potentials_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._duplicates_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
         self._duplicates_st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         self._alternates_st = ClientGUICommon.BetterStaticText( self._duplicates_panel )
@@ -1195,7 +1278,6 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         st.setAlignment( QC.Qt.AlignmentFlag.AlignCenter )
         
         QP.AddToLayout( panel_vbox, st, CC.FLAGS_EXPAND_PERPENDICULAR )
-        QP.AddToLayout( panel_vbox, self._potentials_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( panel_vbox, self._duplicates_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         QP.AddToLayout( panel_vbox, self._alternates_st, CC.FLAGS_EXPAND_PERPENDICULAR )
         
@@ -1328,14 +1410,10 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         total_alternate_files = boned_stats[ 'total_alternate_files' ]
         total_alternate_groups = boned_stats[ 'total_alternate_groups' ]
         total_duplicate_files = boned_stats[ 'total_duplicate_files' ]
-        #total_potential_pairs = boned_stats[ 'total_potential_pairs' ]
         
-        #potentials_label = f'Total duplicate potential pairs: {HydrusNumbers.ToHumanInt( total_potential_pairs )}'
-        potentials_label = f'Total potential duplicate pairs: disabled for now'
         duplicates_label = f'Total files in duplicate groups: {HydrusNumbers.ToHumanInt( total_duplicate_files )}'
         alternates_label = f'Total files in alternate groups: {HydrusNumbers.ToHumanInt( total_alternate_files )} ({HydrusNumbers.ToHumanInt( total_alternate_groups )} groups)'
         
-        self._potentials_st.setText( potentials_label )
         self._duplicates_st.setText( duplicates_label )
         self._alternates_st.setText( alternates_label )
         
@@ -1601,7 +1679,7 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
                 
             elif num_total + num_deleted < 1000:
                 
-                special_message = 'I hope you enjoy my software. You might like to check out the downloaders! :^)'
+                special_message = 'I hope you enjoy my software. You might like to think about workflows to import your backlog and new files. :^)'
                 
             elif num_inbox <= num_archive / 99:
                 
@@ -1636,7 +1714,6 @@ class ReviewHowBonedAmI( ClientGUIScrolledPanels.ReviewPanel ):
         
         QP.AddToLayout( self._files_content_vbox, self._files_content_panel, CC.FLAGS_EXPAND_SIZER_BOTH_WAYS )
         
-        self._potentials_st.setText( '' )
         self._duplicates_st.setText( '' )
         self._alternates_st.setText( '' )
         

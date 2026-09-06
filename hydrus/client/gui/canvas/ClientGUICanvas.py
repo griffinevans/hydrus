@@ -171,31 +171,24 @@ def AddAudioVolumeMenu( menu, canvas_type, media_container ):
     
     ( mute_option_name, volume_option_name ) = ClientGUIMediaControls.volume_types_to_option_names[ volume_volume_type ]
     
-    # 0-100 inclusive
-    volumes = list( range( 0, 110, 10 ) )
-    
     current_volume = CG.client_controller.new_options.GetInteger( volume_option_name )
     
-    if current_volume not in volumes:
+    def change_volume_from_slider( v ):
         
-        volumes.append( current_volume )
-        
-        volumes.sort()
+        ClientGUIMediaControls.ChangeVolume( volume_volume_type, v )
         
     
-    for volume in volumes:
-        
-        label = 'volume: {}'.format( volume )
-        
-        if volume == current_volume:
-            
-            ClientGUIMenus.AppendMenuCheckItem( volume_menu, label, 'Set the volume.', True, ClientGUIMediaControls.ChangeVolume, volume_volume_type, volume )
-            
-        else:
-            
-            ClientGUIMenus.AppendMenuItem( volume_menu, label, 'Set the volume.', ClientGUIMediaControls.ChangeVolume, volume_volume_type, volume )
-            
-        
+    ClientGUIMenus.AppendMenuSlider(
+        volume_menu,
+        'volume',
+        'Set the volume directly',
+        current_volume,
+        0,
+        100,
+        1,
+        change_volume_from_slider,
+        min_width_chars = 15
+    )
     
     ClientGUIMenus.AppendMenu( menu, volume_menu, 'volume' )
     
@@ -207,9 +200,16 @@ class CanvasBackgroundColourGenerator( object ):
         self._my_canvas = my_canvas
         
     
-    def _GetColourFromOptions( self ):
+    def _GetColourFromOptions( self ) -> QG.QColor:
         
-        return self._my_canvas.GetColour( CC.COLOUR_MEDIA_BACKGROUND )
+        colour = self._my_canvas.GetColour( CC.COLOUR_MEDIA_BACKGROUND )
+        
+        if colour.alpha() != 255:
+            
+            colour.setAlpha( 255 )
+            
+        
+        return colour
         
     
     def GetColour( self ) -> QG.QColor:
@@ -589,7 +589,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             return
             
         
-        for child in self.children():
+        for child in self.window().children():
             
             if isinstance( child, ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel ):
                 
@@ -611,7 +611,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         title = 'manage tags'
         frame_key = 'manage_tags_frame'
         
-        manage_tags = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self, title, frame_key )
+        manage_tags = ClientGUITopLevelWindowsPanels.FrameThatTakesScrollablePanel( self.window(), title, frame_key )
         
         panel = ClientGUIManageTags.ManageTagsPanel( manage_tags, self._location_context, CC.TAG_PRESENTATION_MEDIA_VIEWER_MANAGE_TAGS, [ self._current_media ], immediate_commit = True, canvas_key = self._canvas_key )
         
@@ -921,9 +921,9 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._media_container.Pause()
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -959,14 +959,12 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             elif action == CAC.SIMPLE_COPY_FILE_BITMAP:
                 
-                if self._current_media is None:
+                if self._current_media is not None:
                     
-                    return
+                    bitmap_type = command.GetSimpleData()
                     
-                
-                bitmap_type = command.GetSimpleData()
-                
-                ClientGUIMediaSimpleActions.CopyMediaBitmap( self._current_media, bitmap_type )
+                    ClientGUIMediaSimpleActions.CopyMediaBitmap( self._current_media, bitmap_type )
+                    
                 
             elif action == CAC.SIMPLE_COPY_FILES:
                 
@@ -1019,6 +1017,13 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     ClientGUIMediaSimpleActions.CopyMediaURLs( [ self._current_media ] )
                     
                 
+            elif action == CAC.SIMPLE_SHOW_DETAILED_EMBEDDED_FILE_METADATA_WINDOW:
+                
+                if self._current_media is not None:
+                    
+                    ClientGUIMediaModalActions.ShowFileEmbeddedMetadata( self, self._current_media.GetMediaResult() )
+                    
+                
             elif action == CAC.SIMPLE_DELETE_FILE:
                 
                 self._Delete()
@@ -1033,7 +1038,20 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             elif action == CAC.SIMPLE_OPEN_FILE_IN_EXTERNAL_PROGRAM:
                 
-                it_worked = ClientGUIMediaSimpleActions.OpenExternally( self._current_media )
+                data = command.GetSimpleData()
+                
+                if data is not None:
+                    
+                    # TODO: aiiiieeee, I am doing this because I need to differentiate between None launch path while it is in strings
+                    # ditch the _ gumpf when I am using id_and_name
+                    ( _, open_externally_launch_path ) = data
+                    
+                    it_worked = ClientGUIMediaSimpleActions.OpenExternally( self._current_media, open_externally_launch_path )
+                    
+                else:
+                    
+                    it_worked = ClientGUIMediaSimpleActions.OpenExternallyDefault( self._current_media )
+                    
                 
                 if it_worked:
                     
@@ -1057,6 +1075,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     self._MediaFocusWentToExternalProgram()
                     
+                
             elif action == CAC.SIMPLE_NATIVE_OPEN_FILE_PROPERTIES:
                 
                 it_worked = ClientGUIMediaSimpleActions.OpenNativeFileProperties( self._current_media )
@@ -1065,6 +1084,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                     self._MediaFocusWentToExternalProgram()
                     
+                
             elif action == CAC.SIMPLE_NATIVE_OPEN_FILE_WITH_DIALOG:
                 
                 it_worked = ClientGUIMediaSimpleActions.OpenFileWithDialog( self._current_media )
@@ -1139,7 +1159,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                                 
                             else:
                                 
-                                return
+                                return command_matched
                                 
                             
                         
@@ -1347,7 +1367,7 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 self._media_container.SizeSelfToMedia()
                 
             elif action == CAC.SIMPLE_RESIZE_WINDOW_TO_MEDIA_VIEWER_CENTER:
-            
+                
                 self._media_container.SizeSelfToMedia()
                 
                 self._media_container.ResetCenterPosition()
@@ -1491,42 +1511,34 @@ class Canvas( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         elif command.IsContentCommand():
             
-            if self._current_media is None:
+            if self._current_media is not None:
                 
-                return
+                ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, command, ( self._current_media, ) )
                 
-            
-            command_processed = ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, command, ( self._current_media, ) )
             
         elif command.IsInteractiveContentCommand():
             
-            if self._current_media is None:
+            if self._current_media is not None:
                 
-                return
+                content_command = ClientGUIMediaModalActions.GetContentApplicationCommandFromInteractiveContentCommand( self, command, self._current_media )
                 
-            
-            content_command = ClientGUIMediaModalActions.GetContentApplicationCommandFromInteractiveContentCommand( self, command, self._current_media )
-            
-            if content_command.IsContentCommand():
-                
-                command_processed = ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, content_command, ( self._current_media, ) )
-                
-            else:
-                
-                command_processed = False
+                if content_command.IsContentCommand():
+                    
+                    ClientGUIMediaModalActions.ApplyContentApplicationCommandToMedia( self, content_command, ( self._current_media, ) )
+                    
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def ReadyToDestroy( self ):
@@ -1817,11 +1829,9 @@ class CanvasPanel( Canvas ):
             
             #
             
-            info_lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult() )
-            
             info_menu = ClientGUIMenus.GenerateMenu( menu )
             
-            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( info_menu, info_lines )
+            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( self, info_menu, self._current_media.GetMediaResult() )
             
             ClientGUIMediaMenus.AddFileViewingStatsMenu( info_menu, (self._current_media,) )
             
@@ -2301,6 +2311,7 @@ class CanvasWithHovers( Canvas ):
         self._top_hover.sendApplicationCommand.connect( self.ProcessApplicationCommand )
         
         self._media_container.zoomChanged.connect( self._top_hover.SetCurrentZoom )
+        self._media_container.sendApplicationCommand.connect( self.ProcessApplicationCommand, QC.Qt.ConnectionType.QueuedConnection )
         
         self._hovers.append( self._top_hover )
         
@@ -2349,7 +2360,7 @@ class CanvasWithHovers( Canvas ):
         self._window_always_on_top = False
         self._hide_window_frame = False # should always start with titlebar/frame (to establish taskbar gubbins?)
         
-        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_always_on_top' ):
+        if CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_always_on_top' ) and not self.IsAlwaysOnTopWhilePlaying():
             
             CG.client_controller.CallLaterQtSafe( self, 0.1, 'setting media viewer window on top', self._FlipWindowAlwaysOnTop )
             
@@ -2387,16 +2398,72 @@ class CanvasWithHovers( Canvas ):
         self.window().setGeometry( window_real_geom )
         
         self.window().show()
+        
+        self._DoWindowAlwaysOnTop()
+        
         self.update()
         
     
     def _DoWindowAlwaysOnTop( self ):
         
-        self.window().setWindowFlag( QC.Qt.WindowType.WindowStaysOnTopHint, self._window_always_on_top )
+        window = self.window()
         
-        self.window().show()
+        if HC.PLATFORM_WINDOWS:
+            
+            import ctypes
+            from ctypes import wintypes
+            
+            set_window_pos = ctypes.windll.user32.SetWindowPos
+            
+            set_window_pos.argtypes = (
+                wintypes.HWND,
+                wintypes.HWND,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.UINT
+            )
+            
+            set_window_pos.restype = wintypes.BOOL
+            
+            hwnd_insert_after = wintypes.HWND( -1 if self._window_always_on_top else -2 )
+            
+            flags = 0x0001 | 0x0002 | 0x0010
+            
+            success = set_window_pos(
+                wintypes.HWND( int( window.winId() ) ),
+                hwnd_insert_after,
+                0,
+                0,
+                0,
+                0,
+                flags
+            )
+            
+            if success:
+                
+                return
+                
+            
         
-        self.update()
+        current_state = window.windowFlags() & QC.Qt.WindowType.WindowStaysOnTopHint
+        
+        if self._window_always_on_top != current_state:
+            
+            if HC.PLATFORM_LINUX and self._media_container.IsUsingMPV():
+                
+                print( 'Avoiding switching always-on-top because we are Linux + mpv!' )
+                
+                return # this fairly reliably causes a crash hooray
+                
+            
+            window.setWindowFlag( QC.Qt.WindowType.WindowStaysOnTopHint, self._window_always_on_top )
+            
+            window.show()
+            
+            self.update()
+            
         
     
     def _DrawAdditionalTopMiddleInfo( self, painter: QG.QPainter, current_y ):
@@ -3211,14 +3278,19 @@ class CanvasWithHovers( Canvas ):
         return self._hide_window_frame
         
     
+    def IsAlwaysOnTopWhilePlaying( self ):
+        
+        return self._media_container.GetTieMediaWindowOnTopToPausePlayState()
+        
+    
     def NotifyWeAreClosing( self ):
         
         pass
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -3254,16 +3326,16 @@ class CanvasWithHovers( Canvas ):
                 
             elif action in ( CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP, CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON, CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF ):
                 
-                if action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON:
+                should_flip = action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP or ( action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON ) != self._window_always_on_top
+                
+                if should_flip:
                     
-                    self._window_always_on_top = False
-                    
-                elif action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF:
-                    
-                    self._window_always_on_top = True
+                    self._FlipWindowAlwaysOnTop()
                     
                 
-                self._FlipWindowAlwaysOnTop()
+            elif action == CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_WHILE_PLAYING_FLIP:
+                
+                self._media_container.SetTieMediaWindowOnTopToPausePlayState( not self._media_container.GetTieMediaWindowOnTopToPausePlayState() )
                 
             elif action == CAC.SIMPLE_WINDOW_FRAMELESS_FLIP:
                 
@@ -3271,20 +3343,20 @@ class CanvasWithHovers( Canvas ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        if not command_processed:
+        if not command_matched:
             
-            command_processed = super().ProcessApplicationCommand( command )
+            command_matched = super().ProcessApplicationCommand( command )
             
         
-        return command_processed
+        return command_matched
         
     
     def RedrawDetails( self ):
@@ -3753,9 +3825,9 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
             
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -3783,20 +3855,20 @@ class CanvasMediaListFilterArchiveDelete( CanvasMediaList ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        if not command_processed:
+        if not command_matched:
             
-            command_processed = CanvasMediaList.ProcessApplicationCommand( self, command )
+            command_matched = CanvasMediaList.ProcessApplicationCommand( self, command )
             
         
-        return command_processed
+        return command_matched
         
     
     def Skip( self, canvas_key ):
@@ -4067,9 +4139,9 @@ class CanvasMediaListNavigable( CanvasMediaList ):
             
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -4117,20 +4189,20 @@ class CanvasMediaListNavigable( CanvasMediaList ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        if not command_processed:
+        if not command_matched:
             
-            command_processed = CanvasMediaList.ProcessApplicationCommand( self, command )
+            command_matched = CanvasMediaList.ProcessApplicationCommand( self, command )
             
         
-        return command_processed
+        return command_matched
         
     
     def ShowFirst( self, canvas_key ):
@@ -4482,9 +4554,9 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
         self._RegisterNextSlideshowPresentation()
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -4531,20 +4603,20 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        if not command_processed:
+        if not command_matched:
             
-            command_processed = super().ProcessApplicationCommand( command )
+            command_matched = super().ProcessApplicationCommand( command )
             
         
-        return command_processed
+        return command_matched
         
     
     def ShowMenuFromSignal( self, pos ):
@@ -4567,11 +4639,9 @@ class CanvasMediaListBrowser( CanvasMediaListNavigable ):
             
             #
             
-            info_lines = ClientMediaResultPrettyInfo.GetPrettyMediaResultInfoLines( self._current_media.GetMediaResult() )
-            
             info_menu = ClientGUIMenus.GenerateMenu( menu )
             
-            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( info_menu, info_lines )
+            ClientGUIMediaMenus.AddPrettyMediaResultInfoLines( self, info_menu, self._current_media.GetMediaResult() )
             
             ClientGUIMenus.AppendSeparator( info_menu )
             

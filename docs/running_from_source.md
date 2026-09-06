@@ -60,7 +60,7 @@ There are now setup scripts that make this easy. You do not need any python expe
     
     If you get some nice python version information, you have python. Hydrus should be fine with Python 3.10-3.13. If you are on 3.14+, that may be ok, but select the 'advanced' setup later on and choose the '(t)est' options. If you are stuck on something older, try the same thing, but with the '(o)lder' options (but I can't promise it will work!).
     
-    If you don't have python, we need to get it. Try 3.12 [here](https://www.python.org/downloads/windows/). During the install process, make sure it has something like 'Add Python to PATH' checked. This makes Python available everywhere in Windows.  
+    If you don't have python, we need to get it. Try 3.13 [here](https://www.python.org/downloads/windows/). During the install process, make sure it has something like 'Add Python to PATH' checked. This makes Python available everywhere in Windows.  
     
     Once it is installed, then, _after installation is totally complete_, open up a new terminal (It needs to be a new terminal to catch your now-updated PATH) and copy/paste the following:
     
@@ -95,6 +95,8 @@ There are now setup scripts that make this easy. You do not need any python expe
     ```bash
     sudo pacman -S git
     ```
+    
+    Fedora will be `dnf`. If you need help for your special situation, ask a chatbot.
     
     You should already have a fairly new python. Hydrus is fine with Python 3.10-3.13. If you are on 3.14+, that may be ok, but select the 'advanced' setup later on and choose the '(t)est' options. If you are stuck on something older, try the same thing, but with the '(o)lder' options (but I can't promise it will work!). You can find out what version you have just by opening a new terminal and typing `python3` or `python`.
     
@@ -220,7 +222,7 @@ There are three special external libraries. You just have to get them and put th
         
         Linux can provide what we need in a couple of different ways. It is important that we get `libmpv`, rather than just the `mpv` player. Some Linux installs of mpv do also bring libmpv, but others do not. If your package manager provides mpv and it says it comes with libmpv, you are probably good just to get that.
         
-        Otherwise, try just running `sudo apt install libmpv1` or `sudo apt install libmpv2` in a new terminal. You can also try `apt show libmpv2` to see any current version. Or, if you use a different package manager, try searching `libmpv`, `libmpv1`, `libmpv2`, or again, just `mpv` on that.
+        Otherwise, try just running `sudo apt install libmpv1` or `sudo apt install libmpv2` in a new terminal. You can also try `apt show libmpv2` to see any current version. Or, if you use a different package manager, try searching `libmpv`, `libmpv1`, `libmpv2`, `mpv-libs`, or again, just `mpv` on that. For Fedora you are looking at `sudo dnf install mpv-libs`.
         
         1. If you have earlier than 0.34.1, you will be looking at running the 'advanced' setup in the next section and selecting the 'old' mpv.
         2. If you have 0.34.1 or later, you can run the normal setup script.
@@ -233,7 +235,7 @@ There are three special external libraries. You just have to get them and put th
         
         You should already have ffmpeg, but we should double-check: just type `ffmpeg` into a new terminal, and it should give a basic version response. If you don't have it, check your package manager.
         
-        If you are on a 'LTS'-style Linux flavour, your system ffmpeg may be pinned to an older version to guarantee stability. There's a couple guys who make regular new Linux builds, such as [here](https://github.com/BtbN/FFmpeg-Builds/releases). If you like, you can download that and extract the internal `ffmpeg` executable into `install_dir/bin`, and hydrus will use that instead. Unless you know better, you probably want the `linux64 gpl non-shared`.
+        If you are on a 'LTS'-style Linux flavour, your system ffmpeg may be pinned to an older version to guarantee stability. There's a couple guys who make regular new Linux builds, such as [here](https://github.com/BtbN/FFmpeg-Builds/releases). If you like, you can download that and extract the internal `ffmpeg` executable into `install_dir/bin` (or just download the hydrus Linux build I put out and use the one in there), and hydrus will use that instead. Unless you know better, you probably want the `linux64 gpl non-shared`.
         
 
 === "macOS"

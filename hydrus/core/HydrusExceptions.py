@@ -53,8 +53,11 @@ class DirectoryMissingException( HydrusException ): pass
 class SerialisationException( HydrusException ): pass
 class NameException( HydrusException ): pass
 class ShutdownException( HydrusException ): pass
-class SubprocessTimedOut( HydrusException ): pass
 class QtDeadWindowException( HydrusException ): pass
+
+class ExecutableException( HydrusException ): pass
+class SubprocessTimedOut( ExecutableException ): pass
+class BadReturnCodeException( ExecutableException ): pass
 
 class UnsupportedFileException( HydrusException ): pass
 class ZeroSizeFileException( UnsupportedFileException ): pass

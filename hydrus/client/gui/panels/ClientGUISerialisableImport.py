@@ -645,6 +645,8 @@ class ReviewDownloaderImport( ClientGUIScrolledPanels.ReviewPanel ):
         
         self._ImportPayloads( payloads )
         
+        self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(payloads))} items!' )
+        
     
     def EventLainClick( self, event ):
         
@@ -749,11 +751,11 @@ class ReviewWhatIsThisObject( ClientGUIScrolledPanels.ReviewPanel ):
                 
             except Exception as e:
                 
-                result_texts.append( 'Error: {e}' )
+                result_texts.append( f'Error: {e}' )
                 
             
         
-        ending_description_text = f'{HydrusNumbers.ToHumanInt(len( result_texts))} items\n\n' + '\n\n'.join( result_texts)
+        ending_description_text = f'{HydrusNumbers.ToHumanInt(len( result_texts ))} items\n\n' + '\n\n'.join( result_texts )
         
         self._description.setText( ending_description_text )
         self._json_content.setText( '\n\n'.join( json_texts ) )
@@ -773,6 +775,8 @@ class ReviewWhatIsThisObject( ClientGUIScrolledPanels.ReviewPanel ):
             
         
         self._ImportPayloads( payloads )
+        
+        self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(payloads))} items!' )
         
     
     def EventImageClick( self, event ):

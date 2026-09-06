@@ -375,6 +375,7 @@ SHORTCUTS_MEDIA_ACTIONS = [
     CAC.SIMPLE_SHOW_DUPLICATES,
     CAC.SIMPLE_OPEN_KNOWN_URL,
     CAC.SIMPLE_COPY_URLS,
+    CAC.SIMPLE_SHOW_DETAILED_EMBEDDED_FILE_METADATA_WINDOW,
     CAC.SIMPLE_NATIVE_OPEN_FILE_PROPERTIES,
     CAC.SIMPLE_NATIVE_OPEN_FILE_WITH_DIALOG,
     CAC.SIMPLE_DUPLICATE_MEDIA_DISSOLVE_DUPLICATE_GROUP,
@@ -440,6 +441,7 @@ SHORTCUTS_MEDIA_VIEWER_ACTIONS = [
     CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_FLIP,
     CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON,
     CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF,
+    CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_WHILE_PLAYING_FLIP,
     CAC.SIMPLE_WINDOW_FRAMELESS_FLIP,
     CAC.SIMPLE_PER_PLAYER_AUDIO_MUTE,
     CAC.SIMPLE_PER_PLAYER_AUDIO_MUTE_FLIP,
@@ -1684,9 +1686,9 @@ class ShortcutsHandler( QC.QObject ):
         
         if command is not None:
             
-            command_processed = self._command_processor.ProcessApplicationCommand( command )
+            command_matched = self._command_processor.ProcessApplicationCommand( command )
             
-            if command_processed:
+            if command_matched:
                 
                 shortcut_processed = True
                 
@@ -1695,7 +1697,7 @@ class ShortcutsHandler( QC.QObject ):
                 
                 message = 'Shortcut "{}" matched to command "{}" on {}.'.format( shortcut.ToString(), command.ToString(), repr( self._parent ) )
                 
-                if command_processed:
+                if command_matched:
                     
                     message += ' It was processed.'
                     
@@ -2008,7 +2010,7 @@ class ShortcutsManager( QC.QObject ):
             
         
     
-    def GetCommand( self, shortcuts_names: collections.abc.Iterable[ str ], shortcut: Shortcut ):
+    def GetCommand( self, shortcuts_names: collections.abc.Iterable[ str ], shortcut: Shortcut ) -> CAC.ApplicationCommand | None:
         
         # process more specific shortcuts with higher priority
         shortcuts_names_list = list( shortcuts_names )

@@ -1,5 +1,6 @@
 import collections.abc
 import json
+import re
 import typing
 
 from qtpy import QtCore as QC
@@ -25,6 +26,7 @@ from hydrus.client.gui.canvas import ClientGUIMPV
 from hydrus.client.gui.lists import ClientGUIListBoxes
 from hydrus.client.gui.panels import ClientGUIScrolledPanels
 from hydrus.client.gui.widgets import ClientGUICommon
+from hydrus.client.gui.widgets import ClientGUIMenuButton
 from hydrus.client.importing.options import NoteImportOptions
 from hydrus.client.media import ClientMediaList
 from hydrus.client.media import ClientMediaResult
@@ -888,6 +890,39 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         self._paste_button = ClientGUICommon.IconButton( self, CC.global_icons().paste, self._Paste )
         self._paste_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Paste from a copy from another notes dialog.' ) )
         
+        self._copy_urls_button = ClientGUICommon.IconButton( self, CC.global_icons().link, self._CopyURLs )
+        self._copy_urls_button.setToolTip( ClientGUIFunctions.WrapToolTip( 'Copy all URLs from the current note text. Is not perfect--check the output for trailing periods etc..!' ) )
+        
+        menu_template_items = []
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'copy_notes_dialog_copy_all' )
+        
+        tt = 'Copy all the notes in the dialog, or just the one in view?'
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'copy all notes', tt, check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'copy_notes_dialog_copy_json' )
+        
+        tt = 'Copy as technical JSON, which the paste button will accept, or as prettier, human text?'
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'copy as JSON', tt, check_manager ) )
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemSeparator() )
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'start_note_editing_at_end' )
+        
+        tt = 'Start editing notes with the text cursor at the end of the document.'
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'start editing with text cursor at the end', tt, check_manager ) )
+        
+        check_manager = ClientGUICommon.CheckboxManagerOptions( 'copy_notes_quick_click_only_copies_text' )
+        
+        tt = 'Otherwise, copy title and text.'
+        
+        menu_template_items.append( ClientGUIMenuButton.MenuTemplateItemCheck( 'on middle-click note hover copy, only copy text', tt, check_manager ) )
+        
+        self._cog_button = ClientGUIMenuButton.CogIconButton( self, menu_template_items )
+        
         #
         
         index_to_select = 0
@@ -930,6 +965,8 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         QP.AddToLayout( button_hbox, self._delete_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( button_hbox, self._copy_button, CC.FLAGS_CENTER_PERPENDICULAR )
         QP.AddToLayout( button_hbox, self._paste_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._copy_urls_button, CC.FLAGS_CENTER_PERPENDICULAR )
+        QP.AddToLayout( button_hbox, self._cog_button, CC.FLAGS_CENTER_PERPENDICULAR )
         
         vbox = QP.VBoxLayout()
         
@@ -999,11 +1036,78 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
     
     def _Copy( self ):
         
-        ( names_to_notes, deletee_names ) = self.GetValue()
+        if CG.client_controller.new_options.GetBoolean( 'copy_notes_dialog_copy_all' ):
+            
+            ( names_to_notes, deletee_names ) = self.GetValue()
+            
+        else:
+            
+            current_page = self._notebook.currentWidget()
+            
+            if current_page is None:
+                
+                return
+                
+            
+            current_page = typing.cast( QW.QPlainTextEdit, current_page )
+            
+            name = self._notebook.tabText( self._notebook.currentIndex() )
+            note_text = HydrusText.CleanNoteText( current_page.toPlainText() )
+            
+            names_to_notes = { name : note_text }
+            
         
-        text = json.dumps( names_to_notes )
+        if len( names_to_notes ) == 0:
+            
+            return
+            
         
-        CG.client_controller.pub( 'clipboard', 'text', text )
+        if CG.client_controller.new_options.GetBoolean( 'copy_notes_dialog_copy_json' ):
+            
+            text = json.dumps( names_to_notes )
+            
+            note_type_desc = 'encoded '
+            
+        else:
+            
+            names_and_notes = sorted( names_to_notes.items(), key = lambda x : HydrusText.HumanTextSortKey( x[0] ) )
+            
+            text = '\n\n\n\n'.join( ( name + '\n\n' + note_text for ( name, note_text ) in names_and_notes ) )
+            
+            note_type_desc = ''
+            
+        
+        if len( text ) > 0:
+            
+            CG.client_controller.pub( 'clipboard', 'text', text )
+            
+            self._copy_button.ShowMicroNotification( f'Copied {HydrusNumbers.ToHumanInt( len( names_to_notes ) ) } {note_type_desc}notes!' )
+            
+        
+    
+    def _CopyURLs( self ):
+        
+        current_page = self._notebook.currentWidget()
+        
+        if current_page is None:
+            
+            return
+            
+        
+        current_page = typing.cast( QW.QPlainTextEdit, current_page )
+        
+        note_text = HydrusText.CleanNoteText( current_page.toPlainText() )
+        
+        urls = re.findall(r'https?://[^\s<>"\']+', note_text )
+        
+        if len( urls ) > 0:
+            
+            urls_text = '\n'.join( urls )
+            
+            CG.client_controller.pub( 'clipboard', 'text', urls_text )
+            
+        
+        self._copy_urls_button.ShowMicroNotification( f'Copied {HydrusNumbers.ToHumanInt( len( urls ) )} URLs!' )
         
     
     def _CurrentNoteChanged( self ):
@@ -1106,6 +1210,8 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
                 
             
         
+        self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(new_names_to_notes))} new notes!' )
+        
     
     def _DeleteNote( self ):
         
@@ -1189,9 +1295,9 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
         return ( names_to_notes, deletee_names )
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -1203,15 +1309,15 @@ class EditFileNotesPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolle
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def UserIsOKToCancel( self ):
@@ -1726,6 +1832,8 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
         
         CG.client_controller.pub( 'clipboard', 'text', text )
         
+        self._copy_button.ShowMicroNotification( f'Copied {HydrusNumbers.ToHumanInt(len(urls))} URLs!' )
+        
     
     def _EnterURLs( self, urls, only_add = False ):
         
@@ -1820,6 +1928,8 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             urls = HydrusText.DeserialiseNewlinedTexts( raw_text )
             
             self._EnterURLs( urls, only_add = True )
+            
+            self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(urls))} URLs!' )
             
         except Exception as e:
             
@@ -1955,9 +2065,9 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
             
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -1973,15 +2083,15 @@ class EditURLsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUIScrolledPane
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def UserIsOKToOK( self ):

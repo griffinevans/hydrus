@@ -378,6 +378,9 @@ class ThumbnailCache( object ):
         self._waterfall_queue_quick = set()
         self._waterfall_queue = []
         
+        self._shutdown = False
+        self._loop_finished = False
+        
         self._waterfall_queue_empty_event = threading.Event()
         
         self._delayed_regeneration_queue_quick = set()
@@ -581,6 +584,7 @@ class ThumbnailCache( object ):
         
         # let's render our thumbs in order of ease of regeneration, so we rush what we can to screen as fast as possible and leave big vids until the end
         
+        # first off, get an entry for everything and assume the worst. this ultimately is stuff like PDF
         for mime in HC.ALLOWED_MIMES:
             
             self._magic_mime_thumbnail_ease_score_lookup[ mime ] = 5
@@ -591,12 +595,9 @@ class ThumbnailCache( object ):
         self._magic_mime_thumbnail_ease_score_lookup[ None ] = 0
         self._magic_mime_thumbnail_ease_score_lookup[ HC.APPLICATION_UNKNOWN ] = 0
         
-        for mime in HC.APPLICATIONS:
-            
-            self._magic_mime_thumbnail_ease_score_lookup[ mime ] = 0
-            
+        mimes_with_no_thumb = set( HC.ALLOWED_MIMES ).difference( HC.MIMES_WITH_THUMBNAILS )
         
-        for mime in HC.AUDIO:
+        for mime in mimes_with_no_thumb:
             
             self._magic_mime_thumbnail_ease_score_lookup[ mime ] = 0
             
@@ -611,12 +612,6 @@ class ThumbnailCache( object ):
         for mime in HC.ANIMATIONS:
             
             self._magic_mime_thumbnail_ease_score_lookup[ mime ] = 2
-            
-
-        # could get more specific here because some applications will probably be even worse than videos
-        for mime in HC.APPLICATIONS_WITH_THUMBNAILS:
-            
-            self._magic_mime_thumbnail_ease_score_lookup[ mime ] = 3
             
         
         # ffmpeg hellzone
@@ -698,6 +693,11 @@ class ThumbnailCache( object ):
     def CancelWaterfall( self, page_key: bytes, medias: list ):
         
         with self._lock:
+            
+            if self._shutdown:
+                
+                return
+                
             
             self._waterfall_queue_quick.difference_update( ( ( page_key, media ) for media in medias ) )
             
@@ -787,24 +787,6 @@ class ThumbnailCache( object ):
             for hash in hashes:
                 
                 self._data_cache.DeleteData( hash )
-                
-            
-        
-    
-    def WaitUntilFree( self ):
-        
-        while True:
-            
-            if HG.started_shutdown:
-                
-                raise HydrusExceptions.ShutdownException( 'Application shutting down!' )
-                
-            
-            queue_is_empty = self._waterfall_queue_empty_event.wait( 1 )
-            
-            if queue_is_empty:
-                
-                return
                 
             
         
@@ -915,11 +897,35 @@ class ThumbnailCache( object ):
             
         
     
+    def shutdown( self ):
+        
+        self._shutdown = True
+        
+    
+    def WaitUntilFree( self ):
+        
+        self._waterfall_queue_empty_event.wait()
+        
+    
     def Waterfall( self, page_key, medias ):
         
         with self._lock:
             
-            self._waterfall_queue_quick.update( ( ( page_key, media ) for media in medias ) )
+            if self._shutdown:
+                
+                return
+                
+            
+            stuff_to_add = { ( page_key, media ) for media in medias }
+            
+            # if there is stuff to add, this generally returns quickly, not wasting time
+            # if there isn't stuff to add, we avoid doing a recalcqueues, saving time
+            if stuff_to_add.issubset( self._waterfall_queue_quick ):
+                
+                return
+                
+            
+            self._waterfall_queue_quick.update( stuff_to_add )
             
             self._RecalcQueues()
             
@@ -931,7 +937,7 @@ class ThumbnailCache( object ):
         
         # TODO: Wangle this guy to a ManagerWithMainLoop
         
-        while not HydrusThreading.IsThreadShuttingDown():
+        while not ( HydrusThreading.IsThreadShuttingDown() or self._shutdown ):
             
             time.sleep( 0.00001 )
             
@@ -1038,6 +1044,12 @@ class ThumbnailCache( object ):
                 
             
         
+        self._loop_finished = True
+        
+        self.Clear()
+        
+        self._waterfall_queue_empty_event.set()
+        
     
 
 class ThumbnailCacheGraphicsViewTest( object ):
@@ -1071,6 +1083,9 @@ class ThumbnailCacheGraphicsViewTest( object ):
         self._waterfall_queue_quick = set()
         self._waterfall_queue = []
         
+        self._shutdown = False
+        self._loop_finished = False
+        
         self._waterfall_queue_empty_event = threading.Event()
         
         self._delayed_regeneration_queue_quick = set()
@@ -1099,7 +1114,8 @@ class ThumbnailCacheGraphicsViewTest( object ):
     # It's really not nice that this can be called with both image types and even the return type can differ too and should be refactored sometime,
     # but for the time being this is the easiest way I found that 1. keeps code changes to minimum to the existing cache code and 2. preserves performance.
     # Performance of this function really matters since we are going to be requesting/resizing a lot of thumbs...
-    def _ApplySizingToHydrusBitmapOrNumpyImage( self, media_result, image, bounding_dimensions, skip_if_correct_sized_and_numpy ):
+    def _ApplySizingToHydrusBitmapOrNumpyImage( self, media_result, image, bounding_dimensions, skip_if_correct_sized_and_numpy ) -> ClientRendering.HydrusBitmap | None:
+        # TODO: clean up whatever this guy is doing with numpy vs hydrusbitmap and skip_if_correct gubbins
         
         is_hydrus_bitmap = isinstance( image, ClientRendering.HydrusBitmap )
         
@@ -1148,7 +1164,9 @@ class ThumbnailCacheGraphicsViewTest( object ):
                     
                     return ClientRendering.GenerateHydrusBitmapFromNumPyImage( image )
                     
+                
             
+        
         if is_hydrus_bitmap:
             
             numpy_image = image.GetNumpyImage()
@@ -1459,6 +1477,11 @@ class ThumbnailCacheGraphicsViewTest( object ):
         
         with self._lock:
             
+            if self._shutdown:
+                
+                return
+                
+            
             self._waterfall_queue_quick.difference_update( ( ( page_key, media ) for media in medias ) )
             
             cancelled_media_results = { media.GetDisplayMediaResult() for media in medias }
@@ -1563,30 +1586,13 @@ class ThumbnailCacheGraphicsViewTest( object ):
             
         
     
-    def WaitUntilFree( self ):
-        
-        while True:
-            
-            if HG.started_shutdown:
-                
-                raise HydrusExceptions.ShutdownException( 'Application shutting down!' )
-                
-            
-            queue_is_empty = self._waterfall_queue_empty_event.wait( 1 )
-            
-            if queue_is_empty:
-                
-                return
-                
-            
-        
-    
     def GetHydrusSpecialThumbnail( self, bounding_dimensions: tuple[ int, int ] | None, mime = HC.APPLICATION_UNKNOWN ) -> ClientRendering.HydrusBitmap:
         
         if mime not in self._special_thumbs_default_size_hydrus_bitmap:
             
             mime = HC.APPLICATION_UNKNOWN
             
+        
         if bounding_dimensions == ( 0, 0 ) or bounding_dimensions == self._controller.options[ 'thumbnail_dimensions' ]:
             
             return self._special_thumbs_default_size_hydrus_bitmap[ mime ]
@@ -1654,9 +1660,11 @@ class ThumbnailCacheGraphicsViewTest( object ):
                             # so what to use as the 'unsized' image that we'll later resize?
                             # for now it is using the default thumbnail size, and the blurhash image of that size will then get scaled to the final thumb size that was requested
                             # how well does this work in practice? does using thumbnail_scale_type even make sense inside this function?
-                            hydrus_bitmap_unsized = self._GetBestRecoveryThumbnailNumpyUnsized( media_result )
+                            numpy_image_unsized = self._GetBestRecoveryThumbnailNumpyUnsized( media_result )
                             
-                            hydrus_bitmap_sized = self._ApplySizingToHydrusBitmapOrNumpyImage( media_result, hydrus_bitmap_unsized, bounding_dimensions, skip_if_correct_sized_and_numpy = True )
+                            hydrus_bitmap_unsized = ClientRendering.GenerateHydrusBitmapFromNumPyImage( numpy_image_unsized )
+                            
+                            hydrus_bitmap_sized = self._ApplySizingToHydrusBitmapOrNumpyImage( media_result, numpy_image_unsized, bounding_dimensions, skip_if_correct_sized_and_numpy = True )
                             
                         else:
                             
@@ -1664,13 +1672,12 @@ class ThumbnailCacheGraphicsViewTest( object ):
                             
                             hydrus_bitmap_sized = self._ApplySizingToHydrusBitmapOrNumpyImage( media_result, numpy_image, bounding_dimensions, skip_if_correct_sized_and_numpy = True )
                             
-                            if hydrus_bitmap_sized is None: # the unsized image is already the correct size, so the above call skipped resizing the numpy image and creating a new HydrusBitmap and just returned None instead
-                                
-                                hydrus_bitmap_sized = hydrus_bitmap_unsized
-                                
+                        
+                        if hydrus_bitmap_sized is None: # the unsized image is already the correct size, so the above call skipped resizing the numpy image and creating a new HydrusBitmap and just returned None instead
+                            
+                            hydrus_bitmap_sized = hydrus_bitmap_unsized
                             
                         
-                    
                     except Exception as e:
                         
                         return self.GetHydrusSpecialThumbnail( bounding_dimensions, mime )
@@ -1760,9 +1767,24 @@ class ThumbnailCacheGraphicsViewTest( object ):
             
         
     
+    def shutdown( self ):
+        
+        self._shutdown = True
+        
+    
+    def WaitUntilFree( self ):
+        
+        self._waterfall_queue_empty_event.wait()
+        
+    
     def Waterfall( self, page_key, medias ):
         
         with self._lock:
+            
+            if self._shutdown:
+                
+                return
+                
             
             stuff_to_add = { ( page_key, media ) for media in medias }
             
@@ -1785,7 +1807,7 @@ class ThumbnailCacheGraphicsViewTest( object ):
         
         # TODO: Wangle this guy to a ManagerWithMainLoop
         
-        while not HydrusThreading.IsThreadShuttingDown():
+        while not ( HydrusThreading.IsThreadShuttingDown() or self._shutdown ):
             
             time.sleep( 0.00001 )
             
@@ -1891,5 +1913,12 @@ class ThumbnailCacheGraphicsViewTest( object ):
                 self._HandleThumbnailException( hash, e, summary )
                 
             
+        
+        self._loop_finished = True
+        
+        self.Clear()
+        
+        # just to be sure haha
+        self._waterfall_queue_empty_event.set()
         
     

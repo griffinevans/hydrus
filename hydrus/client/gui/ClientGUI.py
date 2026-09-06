@@ -573,6 +573,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         
         self._tabs_tree_model.modelAboutToBeReset.connect( self._tabs_tree_view.SaveState )
         self._tabs_tree_model.modelReset.connect( self._tabs_tree_view.RestoreState )
+        self._tabs_tree_view.emptySpaceDoubleLeftClicked.connect( self._notebook.ChooseNewPageForDeepestNotebook )
         
         self._notebook.selectionChanged.connect( self._tabs_tree_view.SelectLeafFromNotebookPage )
         
@@ -584,9 +585,9 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         self._clipboard_watcher_destination_page_watcher = None
         self._clipboard_watcher_destination_page_urls = None
         
-        drop_target = ClientGUIDragDrop.FileDropTarget( self, self.ImportFiles, self.ImportURLFromDragAndDrop, self._notebook.MediaDragAndDropDropped )
+        self._drop_target = ClientGUIDragDrop.FileDropTarget( self, self.ImportFiles, self.ImportURLFromDragAndDrop, self._notebook.MediaDragAndDropDropped )
         self.installEventFilter( ClientGUIDragDrop.FileDropTarget( self, self.ImportFiles, self.ImportURLFromDragAndDrop, self._notebook.MediaDragAndDropDropped ) )
-        self._notebook.AddSupplementaryTabBarDropTarget( drop_target ) # ugly hack to make the case of files/media dropped onto a tab work
+        self._notebook.AddSupplementaryTabBarDropTarget( self._drop_target ) # ugly hack to make the case of files/media dropped onto a tab work
         
         self._message_manager = ClientGUIPopupMessages.PopupMessageManager( self, self._controller.job_status_popup_queue )
         
@@ -639,6 +640,7 @@ class FrameGUI( CAC.ApplicationCommandProcessorMixin, ClientGUITopLevelWindows.M
         ClientGUITopLevelWindows.SetInitialTLWSizeAndPosition( self, self._frame_key )
         
         self._pre_minimise_window_state = self.windowState()
+        self._last_systray_hide_happened_because_of_main_gui_minimise = False
         
         self._InitialiseMenubar()
         
@@ -3503,15 +3505,15 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         links = ClientGUIMenus.GenerateMenu( menu )
         
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'site', 'Open hydrus\'s website, which is a mirror of the local help.', CC.global_icons().hydrus_black_square, ClientPaths.LaunchURLInWebBrowser, 'https://hydrusnetwork.github.io/hydrus/' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'github repository', 'Open the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'latest build', 'Open the latest build on the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/releases/latest' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'issue tracker', 'Open the github issue tracker, which is run by users.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/hydrusnetwork/hydrus/issues' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, '8chan.moe /t/ (Hydrus Network General)', 'Open the 8chan.moe /t/ board, where a Hydrus Network General should exist with release posts and other status updates.', CC.global_icons().eight_chan, ClientPaths.LaunchURLInWebBrowser, 'https://8chan.moe/t/catalog.html' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'x', 'Open hydrus dev\'s X account, where he makes general progress updates and emergency notifications.', CC.global_icons().x, ClientPaths.LaunchURLInWebBrowser, 'https://x.com/hydrusnetwork' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'tumblr', 'Open hydrus dev\'s tumblr, where he makes release posts and other status updates.', CC.global_icons().tumblr, ClientPaths.LaunchURLInWebBrowser, 'https://hydrus.tumblr.com/' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'discord', 'Open a discord channel where many hydrus users congregate. Hydrus dev visits regularly.', CC.global_icons().discord, ClientPaths.LaunchURLInWebBrowser, 'https://discord.gg/wPHPCUZ' )
-        site = ClientGUIMenus.AppendMenuIconItem( links, 'patreon', 'Open hydrus dev\'s patreon, which lets you support development.', CC.global_icons().patreon, ClientPaths.LaunchURLInWebBrowser, 'https://www.patreon.com/hydrus_dev' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'site', 'Open hydrus\'s website, which is a mirror of the local help.', CC.global_icons().hydrus_black_square, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://hydrusnetwork.github.io/hydrus/' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'github repository', 'Open the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://github.com/hydrusnetwork/hydrus' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'latest build', 'Open the latest build on the hydrus github repository.', CC.global_icons().github, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://github.com/hydrusnetwork/hydrus/releases/latest' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'issue tracker', 'Open the github issue tracker, which is run by users.', CC.global_icons().github, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://github.com/hydrusnetwork/hydrus/issues' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, '8chan.moe /t/ (Hydrus Network General)', 'Open the 8chan.moe /t/ board, where a Hydrus Network General should exist with release posts and other status updates.', CC.global_icons().eight_chan, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://8chan.moe/t/catalog.html' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'x', 'Open hydrus dev\'s X account, where he makes general progress updates and emergency notifications.', CC.global_icons().x, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://x.com/hydrusnetwork' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'tumblr', 'Open hydrus dev\'s tumblr, where he makes release posts and other status updates.', CC.global_icons().tumblr, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://hydrus.tumblr.com/' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'discord', 'Open a discord channel where many hydrus users congregate. Hydrus dev visits regularly.', CC.global_icons().discord, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://discord.gg/wPHPCUZ' )
+        site = ClientGUIMenus.AppendMenuIconItem( links, 'patreon', 'Open hydrus dev\'s patreon, which lets you support development.', CC.global_icons().patreon, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://www.patreon.com/hydrus_dev' )
         
         ClientGUIMenus.AppendMenu( menu, links, 'links' )
         
@@ -3583,6 +3585,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file report mode', 'Have the file manager report file request information, where supported.', HG.file_report_mode, self._SwitchBoolean, 'file_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file import report mode', 'Have the db and file manager report file import progress.', HG.file_import_report_mode, self._SwitchBoolean, 'file_import_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'file sort report mode', 'Have the file sorter spam you with sort key results.', HG.file_sort_report_mode, self._SwitchBoolean, 'file_sort_report_mode' )
+        ClientGUIMenus.AppendMenuCheckItem( report_modes, 'graphics view thumbnail update report mode', 'Have the new thumbnail graphics view test report update calls.', HG.thumbnail_graphics_view_report_mode, self._SwitchBoolean, 'thumbnail_graphics_view_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'gui report mode', 'Have the gui report inside information, where supported.', HG.gui_report_mode, self._SwitchBoolean, 'gui_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'hover window report mode', 'Have the hover windows report their show/hide logic.', HG.hover_window_report_mode, self._SwitchBoolean, 'hover_window_report_mode' )
         ClientGUIMenus.AppendMenuCheckItem( report_modes, 'idle report mode', 'Make popups about idle mode on/off decisions.', HG.idle_report_mode, self._SwitchBoolean, 'idle_report_mode' )
@@ -3642,7 +3645,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
         
         data_actions = ClientGUIMenus.GenerateMenu( debug_menu )
         
-        ClientGUIMenus.AppendMenuCheckItem( data_actions, 'db ui-hang relief mode', 'Have UI-synchronised database jobs process pending Qt events while they wait.', HG.db_ui_hang_relief_mode, self._SwitchBoolean, 'db_ui_hang_relief_mode' )
         ClientGUIMenus.AppendMenuItem( data_actions, 'flush log', 'Command the log to write any buffered contents to hard drive.', HydrusData.DebugPrint, 'Flushing log' )
         ClientGUIMenus.AppendMenuItem( data_actions, 'force database commit', 'Command the database to flush all pending changes to disk.', CG.client_controller.ForceDatabaseCommit )
         ClientGUIMenus.AppendMenuItem( data_actions, 'review threads', 'Show current threads and what they are doing.', self._ReviewThreads )
@@ -3807,7 +3809,7 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
         
         ClientGUIMenus.AppendMenuItem( submenu, 'import downloaders' + HC.UNICODE_ELLIPSIS, 'Import new download capability through encoded pngs from other users.', self._ImportDownloaders )
-        ClientGUIMenus.AppendMenuIconItem( submenu, 'user-run downloader repository', 'Open the user-run github repository that has many additional downloaders.', CC.global_icons().github, ClientPaths.LaunchURLInWebBrowser, 'https://github.com/CuddleBear92/Hydrus-Presets-and-Scripts' )
+        ClientGUIMenus.AppendMenuIconItem( submenu, 'user-run downloader repository', 'Open the user-run github repository that has many additional downloaders.', CC.global_icons().github, ClientPaths.LaunchURLInDefaultWebBrowser, 'https://github.com/CuddleBear92/Hydrus-Presets-and-Scripts' )
         ClientGUIMenus.AppendMenuItem( submenu, 'export downloaders' + HC.UNICODE_ELLIPSIS, 'Export downloader components to easy-import pngs.', self._ExportDownloader )
         
         ClientGUIMenus.AppendSeparator( submenu )
@@ -4706,8 +4708,6 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             panel = ClientGUIScrolledPanels.EditSingleCtrlPanel( dlg )
             
-            height_num_chars = 20
-            
             control = ClientGUITime.TimeDeltaWidget( panel, min = HydrusNetwork.MIN_NULLIFICATION_PERIOD, days = True, hours = True, minutes = True, seconds = True )
             
             control.SetValue( nullification_period )
@@ -5392,10 +5392,9 @@ ATTACH "client.mappings.db" as external_mappings;'''
             
             idle_status = ''
             idle_tooltip = None
-            
-        
-        hydrus_busy_status = self._controller.GetThreadPoolBusyStatus()
-        hydrus_busy_tooltip = 'just a simple measure of how much hydrus wants to do atm'
+
+
+        ( hydrus_busy_status, hydrus_busy_tooltip ) = self._controller.GetThreadPoolBusyStatus()
         
         if self._controller.SystemBusy():
             
@@ -6958,10 +6957,6 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             HG.db_report_mode = not HG.db_report_mode
             
-        elif name == 'db_ui_hang_relief_mode':
-            
-            HG.db_ui_hang_relief_mode = not HG.db_ui_hang_relief_mode
-            
         elif name == 'fake_petition_mode':
             
             HG.fake_petition_mode = not HG.fake_petition_mode
@@ -7044,6 +7039,10 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             HG.thumbnail_debug_mode = not HG.thumbnail_debug_mode
             
+        elif name == 'thumbnail_graphics_view_report_mode':
+            
+            HG.thumbnail_graphics_view_report_mode = not HG.thumbnail_graphics_view_report_mode
+            
         elif name == 'force_idle_mode':
             
             HG.force_idle_mode = not HG.force_idle_mode
@@ -7111,7 +7110,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
         
     
-    def _SystemTrayHide( self ):
+    def _SystemTrayHide( self, happening_because_of_main_gui_minimise = False ):
         
         if not ClientGUISystemTray.SystemTrayAvailable():
             
@@ -7131,6 +7130,8 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
             return
             
+        
+        self._last_systray_hide_happened_because_of_main_gui_minimise = happening_because_of_main_gui_minimise
         
         visible_tlws = [ tlw for tlw in QW.QApplication.topLevelWidgets() if tlw.isVisible() or tlw.isMinimized() ]
         
@@ -7184,6 +7185,13 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
             
         
         self._have_shown_once = True
+        
+        if CG.client_controller.new_options.GetBoolean( 'minimise_client_to_system_tray_bugfix_restore_after_show' ) and self._last_systray_hide_happened_because_of_main_gui_minimise:
+            
+            self.setWindowState( self._pre_minimise_window_state )
+            
+        
+        self._last_systray_hide_happened_because_of_main_gui_minimise = False
         
         page = self.GetCurrentPage()
         
@@ -7350,7 +7358,7 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         
     def _UpdateSystemTrayIcon( self, currently_booting = False ):
         
-        if not ClientGUISystemTray.SystemTrayAvailable() or ( not (HC.PLATFORM_WINDOWS or HC.PLATFORM_MACOS ) and not CG.client_controller.new_options.GetBoolean( 'advanced_mode' ) ):
+        if not ClientGUISystemTray.SystemTrayAvailable():
             
             return
             
@@ -7698,17 +7706,43 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                     
                     if ClientGUISystemTray.SystemTrayAvailable() and self._controller.new_options.GetBoolean( 'minimise_client_to_system_tray' ):
                         
-                        # ok this is a special thing but it makes sense
-                        # when we restore the window, we want to restore it as it was before the hide
-                        # the triggering action is a minimise, which means the restore point is before that
-                        # this set-state here is so quick the user does not see, but it sets flags nicely before the hide
-                        # when I cleaned up the changeEvent stuff, I noticed we were getting weird paired restore-minimise events as it tried to navigate this stuff quickly
-                        # but moving to this, and remembering whole window_state rather than 'was maximised' alone, seems to have fixed it
-                        self.setWindowState( self._pre_minimise_window_state )
-                        
-                        self._SystemTrayHide()
-                        
-                        return
+                        if CG.client_controller.new_options.GetBoolean( 'minimise_client_to_system_tray_bugfix_restore_after_show' ):
+                            
+                            self._SystemTrayHide( happening_because_of_main_gui_minimise = True )
+                            
+                            return
+                            
+                        elif CG.client_controller.new_options.GetBoolean( 'minimise_client_to_system_tray_bugfix_deferred_state_set' ):
+                            
+                            def do_it():
+                                
+                                # ok this is a special thing but it makes sense
+                                # when we restore the window, we want to restore it as it was before the hide
+                                # the triggering action is a minimise, which means the restore point is before that
+                                # this set-state here is so quick the user does not see, but it sets flags nicely before the hide
+                                # when I cleaned up the changeEvent stuff, I noticed we were getting weird paired restore-minimise events as it tried to navigate this stuff quickly
+                                # but moving to this, and remembering whole window_state rather than 'was maximised' alone, seems to have fixed it
+                                self.setWindowState( self._pre_minimise_window_state )
+                                
+                                self._SystemTrayHide( happening_because_of_main_gui_minimise = True )
+                                
+                            
+                            CG.client_controller.CallAfterQtSafe( self, do_it )
+                            
+                        else:
+                            
+                            # ok this is a special thing but it makes sense
+                            # when we restore the window, we want to restore it as it was before the hide
+                            # the triggering action is a minimise, which means the restore point is before that
+                            # this set-state here is so quick the user does not see, but it sets flags nicely before the hide
+                            # when I cleaned up the changeEvent stuff, I noticed we were getting weird paired restore-minimise events as it tried to navigate this stuff quickly
+                            # but moving to this, and remembering whole window_state rather than 'was maximised' alone, seems to have fixed it
+                            self.setWindowState( self._pre_minimise_window_state )
+                            
+                            self._SystemTrayHide( happening_because_of_main_gui_minimise = True )
+                            
+                            return
+                            
                         
                     
                 
@@ -7872,6 +7906,11 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
     def GetCurrentSessionPageAPIInfoDict( self ):
         
         return self._notebook.GetSessionAPIInfoDict( is_selected = True )
+        
+    
+    def GetDropTarget( self ) -> "ClientGUIDragDrop.FileDropTarget":
+        
+        return self._drop_target
         
     
     def GetMPVWidget( self, parent ):
@@ -8345,9 +8384,9 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
         self._notebook.PresentImportedFilesToPage( hashes, page_name )
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -8517,15 +8556,15 @@ The password is cleartext here but obscured in the entry dialog. Enter a blank p
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def ProposeSaveGUISession( self, name = None, suggested_name = '', notebook = None ):

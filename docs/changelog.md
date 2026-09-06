@@ -7,6 +7,374 @@ title: Changelog
 !!! note
     This is the new changelog, only the most recent builds. For all versions, see the [old changelog](old_changelog.html).
 
+## [Version 686](https://github.com/hydrusnetwork/hydrus/releases/tag/v686)
+
+### misc
+
+* the 'give child windows a tool flag' test setting went well, and I am switching everyone to use this mode as default now. if you have trouble with 'review services' or similar, please hit `options->gui` and hit the new `BUGFIX: Set child windows as non-tool flagged`
+* the `force that hitting Enter/Return on radio button lists triggers a dialog ok` checkbox is now set to true by default, and everyone is switched over this week. same as before, the test went well. if you prefer it the other way, please hit up `options->gui` and switch it back
+* the content summary strings in the duplicate auto-resolution thumbnail pair lists have some formatting improvements: the 'add mappings a, add mappings b, add mappings c...' stuff is now 'add mappings: a, b, c'; different service lines are now newline-separated; and the thumbnail rows are a little taller by minimum to typically fit this text in better
+* decided to finally remove the long-time disabled 'potential pairs' line from Mr Bones. the newer duplicates page with its fragmentary and cancellable search handles all this better, and since the potential pairs space exists only for local files rather than Mr Bones's ability to look into deleted files, it is best just not to bring this number back here. He now only handles total dupes and alternates made
+* improved the maths behind the alternates counts in Mr Bones. it also works a bit faster. the 'x alternate groups' number is now filtered correctly according to the current search context, and some interesting edge cases are consciously handled so a search for 'system:file relationships - number of alternates = 0' produces the correct 0/0 results. there's a couple of ways of looking at these numbers and I've taken the most conservative to occasionally undercount but never overcount
+
+### new thumbnail grid rendering tech
+
+* we've been testing out a new, cleverer way of rendering the thumbnail grid. it works and looks basically exactly like the old system for now but will support new layouts and resizable thumbs in future. we are happy with the test, so I am switching everyone to use it today. ideally, you do not notice any differences. if you suddenly do have trouble with your thumbs, hit up `options->thumbnails`, switch off the new rendering mode, restart the client, and let me know
+* I made the 'which file to select when you press an arrow/page key' work more humanly in the new grid; now, if your current focus file is removed and you then press a movement key, the 'ghost selection' media is now selected, re-initialising your position. previously, it would navigate _from_ the ghost to a neighbour, which always felt weird. also, the ghost is now the _next_ non-removed file (used to be previous), unless the removees stretch to the end of the list, in which case the _previous_ is chosen. this feels a bit more natural and catches some odd cases since previously it worked on selections rather than removees
+* this is more controversial and may mess with muscle memory, but I have also made it so a shift-select does not move the "navigate from here" ghost. this ghost now sticks to the current focus. if this drives you crazy, there is a new checkbox under `options->thumbnails` to switch back to moving the ghost to the last file you hit to alter the shift-selection. if you understand what this means, you are a true patrician and I personally recommend mapping ctrl and shift to your mouse. also, I may start rendering the ghost as a dotted line or something just like you'd get in a file explorer or something
+* as part of this, I fixed an issue with the new tech where it could have trouble finding a new media to select after certain removal of non-selected items, for instance after zero-selection archive/delete filtering or a background file delete
+* fixed the enable-reactivity of the ctrl- and shift-selection checkboxes under `options->thumbnails`
+* I fixed up some various other focus items and 'these were selected in the current shift-select' variables that were not properly cleansing themselves after a media remove event
+* the new graphics view thumbgrid test can now process an interactive 'entry dialog' content update shortcut
+* fixed a trace error with the interactive 'entry dialog' command when nothing is selected in the thumbgrid
+
+### new ways to open files and urls externally
+
+* in prep for the exe manager taking over, the options for 'default programs' that handles web browser calls and 'open externally' for different filetypes are updated
+* the web browser setting is now a list of calls, so you can set up alternate web browsers or profiles if you like. if you have multiple, the top one is selected for quick/default url-openings and in the media 'urls' menu you now get multiple submenus to choose which one you want
+* the file 'open externally' has two changes--now you can set the default 'open externally' call for "all files" and "all images/videos/whatever" as well as for individual filetypes. I hope this makes it simpler to just switch from x image viewer to y for everything while still allowing something special for avif or whatever. your existing options are going to be eaten up and converted to the simplest suitable umbrella solution
+* and, secondly, each of those entries now support multiple calls, so you can say 'open images with x program or y' and then, like with the urls, the top item is the default for quick actions but otherwise your media 'open externally' menu is going to dynamically expand into multiple options if you set that up
+* the string program cals are all going to be converted to the exe manager in a week or two. feel free to add new paths now, or wait for that, at which point you'll be selecting from a dropdown here
+
+### potential pair discovery scheduling logic
+
+* I cleaned up a bunch of edge-case logic around how files are set to be searched for potential pairs. an interesting bug (#2086) revealed that previously-deleted files were not being scheduled for re-entry into the potential pairs search system, and when I looked into it, this revealed some more messy logic. I've cleaned it up and now blank square files are 'find similar files' searchable
+* first off, when a previously deleted file is re-imported, it is now scheduled for potential-pair discovery as expected
+* further, the determinant of whether a file should be searched for potentiar-pair discovery is now strictly that it has non-blank phashes. files with blank or near-blank phashes are now entered into the search tree, but they are not scheduled for potential pair discovery (blank files produce many false positive pairs, so we do not want them)
+* the 'ensure file is in similar files search system' job is now careful to only consider that question, and it no longer triggers any pixel or phash regens
+* files that are discovered to have no useful phashes are deregistered from the system correctly. previously, some pixel hash and re-import events would trigger an accidental listing or not trigger a proper delisting; now the logic is KISS
+* all files that currently have no phashes (blank files and some weird non-renderable things) are scheduled for a phash regen on update, which will make 'system:similar to' work for them
+* identical blank files (we had an example of two pure white comic pages with the same resolution, once) that share the same pixel hash will no longer naturally appear in the potential pair search
+* pasting a blank or near-blank image into the 'system:similar files' panel also now produces phashes in the box. it is now possible to search for blank and blank-like images with this system. if you are interested, the blank phash is `8000000000000000`. paste it in once the maintenance has caught up here and brace yourself for a rollercoaster ride
+* the names and descriptions of the 'check for membership in...' and 'regenerate perceptual hashes' file maintenance jobs are clarified
+
+### boring stuff
+
+* fixed an issue where non-advanced users saw the 'external programs (TESTING)' page in the options lol
+* cleaned up the application processing code's responses and formalised that a shortcut will be caught if it matches an entry, not only if it matches and the command produced an arbitrary result. if you say 'copy bitmap' when no file is selected, the shortcut is swallowed there; it won't go "ok nothing happened" and see if anything higher matches your shortcut
+* a user reported an interesting statistical bug in the duplicate pairs fragmentary search; where it does a confidence interval check, in one case it had more searched items than the entire search space. it seems this was a race condition. I have wrapped all the code in proper locking, added nicer guards before the math, and tidied up some redundant code along the way
+* misc linting and typing, blah
+
+## [Version 685](https://github.com/hydrusnetwork/hydrus/releases/tag/v685)
+
+### misc
+
+* the 3-second tooltip micro-notification experiment on the 'edit notes' 'copy urls' button worked out, so I wrote the code up properly and made it so all 20+ copy icon buttons across the program say something like 'Copied!' or 'Copied x ratings!' on click, all 23+ paste icon buttons similarly do 'Pasted!' or 'Pasted x texts!'. I'll slowly integrate this into other buttons that do a thing that isn't immediately obvious
+* the media viewer right-click menu's 'volume' submenu now has a volume slider rather than the list of checkboxes
+* fixed a recent regression that was stopping the media viewer from finding and activating an already-existing manage tags window when you did 'manage tags' from the media viewer--it was instead creating multiple windows, which is not desired (#2085)
+* if you have very large or very small thumbnails, the thumbnail pair lists in auto-resolution now size better, setting saner min/max sizes for the thumbnail item cells and scaling thumbs to that size when a min/max limit applies (#2079)
+* added a 'show anything with specific bandwidth rules' checkbox to 'review bandwidth usage'. if you import a downloader and it comes with bandwidth rules, you can now find those without having to actually use the site
+* added a 'can you run the client headless? (not yet)' to the FAQ page, and then added a test line to it from a user who found a possible way
+
+### alternate software
+
+* expanded and formalised the 'if you like hydrus, maybe you will like this software too/instead' section in the help here: https://hydrusnetwork.github.io/hydrus/getting_started_files.html#other_software
+* as part of this, I am listing three hydrus-adjacent projects that are coming into public this month, same way as I list stuff in the Client API page. feel free to check them out! they are--
+* IDHAN (https://github.com/KJNeko/IDHAN) - A high-performance hydrus-like media manager server with a web UI. Very sophisticated.
+* Naiad (https://github.com/scoopscoop/naiad-net) - A hydrus-like media manager with its own PTR-style tag-sharing solution.
+* refr (https://github.com/therandomlance/refr) - An Immich-like with a focus on managing art reference images.
+* if you create your own hydrus-like or similar tech that hydrus users may like, please link me and I'll list it there!
+
+### executable manager
+
+* I invite advanced users to play with this again (`options->external programs`). there's a little change in the call we were playing with last week
+* after talking it out with people, I realised it would be better not to have two 'local process calls' for 'one template string' vs 'command + list of params', and updated the current prototype object, which was the former, to be the latter. thus the current terminal call is updated to have an exe and a list of params with replacement strings, rather than just one template string. it calls the process directly with the params all nice and separate rather than a raw string to your shell, so no quotespam needed. although editing separate params is more of a pain than just a text box, it is neater and more secure to only do it like this, saving us several headaches, and the only blocking cost of eliminating the worse yet easier option is writing some good UI to make editing the better option easier
+* I've therefore tried to make some decent edit UI. nice and simple exe and param list, and copy/paste buttons so you can just paste a raw template if you have a nice simple one
+* the 'availability call' and 'which availability call' settings are gone; we now just do a `which` on the given exe. this breaks the macOS 'open "Google Chrome" blah' calls, but we'll revisit this if it ever proves a big problem
+* the 'open externally' job now provides 'file hash (sha256)' and 'file id' input parameters
+* some stuff is renamed from, say, 'local terminal call' to 'local process call' and so on to reflect the changes around here
+* improved some labels and update signals in the ui--stuff like updating the example templates on a string processor change
+
+### new thumbnail grid test
+
+* advanced users are encouraged to play with this more (`options->thumbnails->New Rendering Tech Test`). I think we have it pretty much nailed down now and so I'm mostly just optimising and cleaning in prep for switching everyone over, and I'd like to see if there are any more visual bugs lurking
+* a bug in the new thumbnail grid test where thumbnails would not redraw is fixed. it turned out there was some duff redraw logic when the 'fade thumbnails' option was off
+* set it so the new thumbnail grid only registers with the animation timer while it has thumbs animating--as soon as there is no more work, it delists itself
+* the new thumbnail grid no longer attempts to animate thumbs if it is not currently on a visible page; it just schedules them for instant draw
+* a thumbnail now correctly understands it is no longer animating if its paint errors out or its fade-in time or backing pixmap are invalidated, which triggers the above delisting
+* added `help->debug->report modes->graphics view thumbnail update report mode`, which spams a bunch of decisions about the new painting tech to log
+
+### boring cleanup
+
+* did some MainLoop Daemon refactoring, just getting over a hump to move some responsibility to the superclass
+* moved to nicer ui-cleanup calls in a bunch of my async code
+
+## [Version 684](https://github.com/hydrusnetwork/hydrus/releases/tag/v684)
+
+### misc
+
+* every thumb/viewer media menu now has 'show detailed embedded file metadata' in the top-row flyout; this is the same window that opens with the media viewer top hover, to which I've been adding EXIF and stuff
+* there's a new shortcut command to spawn this window under the 'media' set, `open detailed embedded file metadata window`
+* I finally got around to figuring out and adding a `Force that hitting Enter/Return on radio button lists triggers a dialog ok` checkbox to `options->gui`. On Windows, an Enter/Return on a radio button list triggers a dialog ok, but on other OSes, it does not. it is one of those platform policy things and Qt is being good and obeying. this casually annoyed me for years, particularly when doing advanced file delete dialogs where rather than a simple yes/no it has a couple of radio button lists, and since moving to Linux full time I finally got my finger out and figured it out. it is default off so I don't mess with anyone's muscle memory etc.., but if this was annoying you, try it out
+* added `TEST: Set tool flag to child windows` to `options->gui`. this test sets a different flag and hopefully improves some window behaviour--specifically, stuff like "review services" should stay on top of the parent, not get a taskbar/alt+tab entry, but still look ok. let me know how it goes, and if no problems, I'll set everyone to it
+* I gave the 'my auto-resolution rule says it has x pairs to search/resolve but it cannot clear them' issue another push. thanks to a user, we figured out an interesting orphaned pair situation. I fixed the logical hole in the maintenance code and updated the new error handling to A) indefinitely pause a rule that hits this, to stop pause/error loops, and B) run the full orphan-clearing maintenance code rather than just the re-count job
+* noneable string widgets now blank their placeholder text when set to none
+* test result text boxes in exe manager and parsing UI now have monospaced font
+
+### hash-search
+
+* system:hash gets a logical makeover. this thing has always been a bit of a mess as it tried to navigate prefixes like `sha256:abcd...`. I have made it simpler
+* the edit dialog now lets you type or paste whatever, with no instant auto-correct. there are now two buttons underneath, `clean up text and guess hash type` and `clean up text and guess hash type (remove bad lines)`, which do the parsing on demand. the first button moans about any errors at all; the second removes errors, so if you want to post a mix of garbage and have hydrus filter it, go ahead
+* the ok button is plugged into this tech too and, as the parsing is also improved, gives richer errors. if you hit ok and the hashes are fine but the hash type seems wrong, it now gives you a special error text
+* hydrus hash parsing now recognises and removes an `0x` prefix from a hash
+* hydrus hash parsing is now much better about case insensitivity. `MD5:AbCD...` is fine
+* hydrus hash parsing now has an error state for hashes with a non-even number of hex characters
+* hydrus hash parsing no longer attempts to hex filter an incoming line; if a hash includes a non-hex character, this now goes in a new error bucket for reporting
+
+### notes quality of life
+
+* added a 'when you middle-click to copy a note hover, only copy the text (not the title)' setting to `options->notes`
+* added that and the 'put cursor at the end' checkboxes to the cog icon button in the edit notes panel
+* added a 'link' icon button to notes that sucks up all the URLs from the current note text. it isn't perfect, but covers all normal 'http...' situations using a `https?://[^\s<>"\']+` regex
+* in a new test, when you do this 'copy URLs in the note' job, it fires off a '3 URLs!' tooltip micro-notification for feedback. give it a go, let me know how it feels, and I think I'll spam this all over the place
+
+### exe manager
+
+* finished off the core edit UI for my exe manager, which still only advanced users can see under `options->external programs`. you can edit everything, and there's a fullly functional test panel that reports return code and stdout/stderr on failures. it isn't perfect, but I'm happy with it as a first step. I will again ask advanced users to check it out, with these instructions: look at the defaults, pick a call that you should have, and then edit it and put in a sensible file path or URL in the test panel and try it! Let me know if you have any errors and where I need to add help text!
+* the defaults button now asks if you want all the default calls or just those for your platform
+* many many other improvements and finishings-off here, and a touch of misc new subprocess tech
+
+### boring exe manager stuff
+
+* rewangled the 'windows startfile' hardcoded launch call to be a platform-agnostic 'OS launch file'
+* added a 'OS launch URL' hardcoded launch call in the same way
+* improved the hydrus subprocess 'this process has timed out' detection system. in doing exe manager work this week, I realised it was waiting after a kill fallback in a blocking way and only reporting the timeout after the final (indefinite) reap went through
+* improved some subprocess error formatting
+
+## [Version 683](https://github.com/hydrusnetwork/hydrus/releases/tag/v683)
+
+### file metadata
+
+* I am ready to roll out the new file metadata flags. on update, you will be given a yes/no dialog asking if you want to schedule a big file metadata regen on pretty much all your images. I recommend all users click yes, but if you want to handle it yourself, you can click no, no worries
+* it will schedule 'has xmp', 'has iptc', 'has software-source', and new 'has human-readable' flag inspection for all your jpegs and some other image formats depending on the type
+* recall you can look at the maintenance progress under `database->file maintenance->manage scheduled jobs` and tweak the file maintenance background work velocity under `options->maintenance and processing`. as a general principle, I do not recommend you try to hurry huge work; just let it do its thing
+* XMP, IPTC, and software/source values are now stripped of leading/trailing whitespace
+* empty XMP, IPTC, and software/source values/list-items are now skipped
+
+### duplicates auto-resolution
+
+* I have added two new hardcoded comparators: "A has same or better metadata flags to B" and "A has ICC Profile if B does". the auto-suggested rules now use these, and the help talks about them, so we do away with the old and awkward and ugly 'both have same x OR B doesn't' formulation. also added some unit tests for this
+* the metadata comparator tests each of EXIF, XMP, IPTC, software/source, and human-readable flags
+* enthusiastic users of auto-resolution may like to swap over to the new comparators once these new flags populate so they can cover more situations
+* if an auto-resolution rule thinks it wants to do search or resolution work but there is no actual pair in the queue, the database now auto-triggers some maintenance to safely temp-pause the rule, regenerate the cached (and miscounted) numbers, and continue. it makes a popup if this happens
+* auto-resolution rules now stop work quickly when paused during a busy work cycle
+* the maintenance jobs that regen auto-resolution rules numbers and clear all potential duplicate pairs generally now trigger a proper, full reload of any list of auto-resolution rules in UI. previously, these guys needed an explicit refresh button click to catch up
+
+### more UI features
+
+* a user has submitted more UI improvements!
+* the media viewer's 'always on top' transition should now be flickerless for Windows
+* further, we now have a tentative 'always on top (while playing)' option. the always-on-top transition in Linux is still flickery, and if you have mpv up it causes a buzzy-noise crash, so I patched it to simply not happen in this situation, and if you are on Linux, the 'eye' menu in the media viewer has a 'THIS MAY BE BUGGY/CRASHY' warning
+* the new treeview test has several updates: double-clicking on treeview empty tab area opens the new page picker, treeview rows now use alternating colours, some bugs are fixed, the layout signaling is less janky, some code is cleaned, menu code is simplified, and there are several new user-controllable options (row height, indentation, alternating line colours)
+* extra note from hydev: if you have been playing with the treeview, hit up the new cog icon menu and look at the in-menu 'tree row dimensions' sliders and give them a spin. absolute space magic
+
+### audio files with embedded images
+
+* the QtMediaPlayer will now show an embedded image if an audio file has one. I pulled this off with some slightly funky tech, so let me know how it goes IRL
+* the default mpv.conf now has a `audio-display=embedded-first` line (thanks to a user, for this) that shows embedded images for audio files. if you never tweaked your mpv.conf, you might like to hit up `options->media playback` and reset back to the default mpv conf there (just hit the 'browse' button and it should start you in the static/mpv-conf dir)
+
+### misc
+
+* added a link to https://github.com/asadtoast/aether in the Client API help; this is an Android app with a bunch of features, including archive/delete and duplicate filtering
+* fixed an issue that was stopping adding potential duplicate pair relationships to files not already registered in the duplicates system. this broke hydrus video duplicate detector and similar tools. sorry for the trouble--I was too keen last week with the valid pair filtering! (issue #2076)
+* the 'external programs' options page is moved to 'default programs'
+
+### executable manager
+
+* the work on this system continues to go well. I fleshed out my previous skeleton, so most of the spinning wheels are connectable now
+* advanced users will see a new 'external programs (TESTING)' options page. this has the first UI available. edit panel isn't ready yet, but you can load the defaults and see what I'm going for
+* wrote out defaults for common OS file launchers and 'open file in web browser' commands
+* I added 'open multiple files externally' tech in prep for finally actually doing this from thumbnail menu
+* next step is to finish the edit panel for this first local call and start a test for advanced users. I'd like to get an early version of this working pretty soon, and get 'open externally' working on it and migrated over, and then I'll add new tech and pipelines to the live system; stuff like tag suggestions
+
+### boring stuff
+
+* added info to the 'help my db is broke' help page regarding `.clone` crashing/halting, the `.backup` command, and a very clever trick a user discovered regarding editing the `sqlite_schema` table to skip cloning a known-malformed table
+* the Docker package is updated to `Alpine 3.24` and should have improved HEIF support
+* skipped 'software/source' inspection when examining importing pdfs (this was silently failing, previously, because it was trying to load them as images)
+
+## [Version 682](https://github.com/hydrusnetwork/hydrus/releases/tag/v682)
+
+### more file metadata
+
+* the client can now inspect an image file and tell if it has (EXIF-like) XMP or IPTC metadata! the data will also show in the media viewer, in the extra info dialog
+* renamed the new 'source' metadata line to 'software/source'. sometimes it is 'photoshop'; sometimes it is a camera model; sometimes it is both
+* the client now tracks and generates 'has software/source', 'has xmp', and 'has iptc' flags, just like 'has exif' and friends. all _new_ files will get these flags and it is all saved to db and so on
+* there are new 'system:file property' predicates to search for these flags; they are also parseable
+* the file maintenance system has new jobs to regen these flags for existing files
+* these flags appear in the duplicate filter comparison statements and in some file flyout menu summaries and so on, similarly
+* 'has embedded metadata' and 'has non-EXIF metadata' and similar terms are now renamed (back) to 'has human-readable metadata'. this flag is now absolutely intended to be Artist, Title, Comment, and AI prompts kind of stuff. 'some dude probably typed this in once metadata'
+* I am, again, not yet triggering the big (optional) 'regen who has human-readable metadata' job for all existing files, but I think we are just about ready, so if no one has any issues with today's work, it'll be next week. we'll do all four xmp, iptc, software/source, and human-readable flags in one go and make something more useful out of all this. if you are an advanced user, give these new flags a spin and let me know what you think
+
+### Client API
+
+* file_metadata call now says `has_xmp`, `has_iptc`, and `has_software_source`, reflecting the above changes
+* Client API version is now 95
+
+### misc
+
+* the right-hand notes hover window in the media viewer now copies the name/note_text on a middle-click. it also has a tooltip that says what different clicks do (is this obscuring/annoying?)
+* the 'edit file notes' dialog has a little cog icon to alter how the copy button works; you can say whether you want all notes or just the current one in view, and you can say whether to copy as JSON, which the paste button accepts, or something more human
+* fixed the new GraphicsView thumbnail widget test to accept drag and drops
+* the options dialog now hides the Qt audio device fetch and list initialisation behind a button click. this has been a source of dialog crashing and other hassle in the past, so, like for mpv, the dialog now needs you to click a thing to go ask your lower level OS dlls whats up with audio device availability right now
+* I fixed an issue in the duplicates system that was sometimes causing non-accessible potential duplicate pairs to be registered. it was when a serf (a non-king member) of a multi-file duplicate group was queued up for potential duplicate discovery and found a pair while the king had since been physically deleted (this typically requires some non-deleting duplicate-setting and then a king delete and then a re-search potentials action, but a big client can have a few warts like this). on update, all clients will run the 'resync potnential duplicate pairs to storage' maintenance job to clean up any location-orphaned pairs
+* thanks to a user, fixed another instance of certain downloaders adding tags parsed in a gallery page fetch passing on their tags to a 'next page' gallery url
+
+### executables manager plan
+
+* I have planned out the basic shape of the executable manager, which is my big project for the second half of this year that will allow hydrus to call external exes and servers in a more flexible way. basically a reverse API that will add tech like 'please download this complicated URL' and 'generate clever tag suggestions for this file' without needing me to write the exe hooks. now I have sunken my teeth into it, I feel fairly good and hope to have richer 'open file/url externally' options page as the first step quite soon
+* in closer detail, I had a think, made a plan, and sketched out some early enums and objects
+* also wrote out a new serialisable tracker object for objects that have an immutable id and a string name label; something nicer than the hackery I have previously deployed in the downloader system
+
+### boring stuff
+
+* added `distortion` and `date:timestamp` to the ignored fields for human-readable metadata
+* since we now track seven boolean flags for stuff like 'has exif' and 'has transparency', I cleaned up _some_ of the db storage code here. I considered folding it all into one table, but in my experience, this particular shape of data doesn't benefit from such a thing. I kept it separate and spammy but KISS and collapsed the code to more shared calls. the search code however is now pretty spammy so I will revisit this
+* cleaned up some code in the master main gui drag and drop catcher and improved how it handles some drag mouse events. there's a small chance some odd drop bugs may be fixed in weirder OSes
+* added some unit tests for the new file metadata flag tech
+* fixed up some unit tests in the duplicates auto-resolution system that were skating on thin ice and needed tighter logic for my new 'only add potential duplicate pairs when they satisfy x and y' filter
+* removed some old defunct Linux help regarding ffmpeg on the frozen builds. you got it now, bro
+* fixed some 'waiting for a work slot' labelling in the downloaders UI
+* a bunch of misc linting and some voodoo linting
+
+## [Version 681](https://github.com/hydrusnetwork/hydrus/releases/tag/v681)
+
+### misc
+
+* status bar 'busy' indicator is simpler, and the tooltip now says the number of threads working
+* wrote a catch to stop QSS stylesheets from specifying a hydrus property colour with transparency. these were drawing crazy, with noclip garbage left on bitmaps used for transparenty images and animations in the media viewer. also fixed the `e621_redux` stylesheet, where this issue was discovered, to simply set a background colour for the media viewer
+
+### more human-readable embedded metadata filtering
+
+* I further cleaned up what hydrus considers 'human-readable embedded metadata'. many more technical fields are now hidden from the little text panel, meaning when this guy does pop up, or you search 'has non-EXIF embedded metadata', you'll now tend to see something nice and human like 'Artist' or 'Title', or otherwise rich like an AI prompt or Character card
+* I now invite advanced users to do some 'determine if the file has non-EXIF embedded metadata' maintenance regenning on some 'has non-EXIF embedded metadata' files and tell me what technical/inhuman text remains in their collections. I'm getting pretty happy here and I expect to (optionally) schedule a big regen for all users pretty soon
+* the newly excluded fields are: 'software', 'transparency', 'bit_depth', 'duration', 'primary', 'default_image', 'Creation Time', 'create-date', 'modify-date', 'date:create', 'date:modify', 'chroma', 'loop', 'timestamp = 0', 'extension', 'photoshop', 'bbox', 'blend', 'mpoffset', 'disposal', 'interlace', 'aspect', 'sizes', a ton of 'Thumb::' garbage, 'iptc', 'Raw profile type exif', 'Raw profile type iptc' (ye olde XMP), 'xmp', 'XML:com.adobe.xmp', 'adobe', and 'adobe_transform'. a bunch of these are format specific DPI data and such and not useful to elevate to the user. the IPTC and XMP stuff will come back when I expand EXIF parsing
+* excluded 'comment' or 'Comment' from human-readable metadata fields if it matches a handful of 'Created with X' style regexes; this is now parsed as a 'software' field
+* the 'Creator' and 'Source' fields are now appended to the 'software' field
+* excluded any human-readable metadata fields that have null value or empty list/dict
+* I realised while doing this that maybe going for a whitelist of what we do want would be saner, but I think I prefer, for completeness and fun, to get everything and actually deal with the sore thumbs
+* put 'software' metadata field in the 'extra info' panel below, as 'source' ('source' rather than 'software' because sometimes stuff like Kodak blah blah comes through here). there's an argument to include this in human-readable fields, if we are keeping artist/title, but I'm falling on the side of extracting it. I like this field a lot as human-valuable and it'll be high priority to be its own thing when we add richer metadata storage/search
+* similarly, the 'create-date' and friends are cool and I'll figure out some way to pipe that to a 'file metadata' modified time 'domain'. you can't generally get any better than the file metadata for this
+* if a file has a 'chroma' field talking about '420' subsampling, this is now converted to a subsampling field in the 'extra info' panel, like for jpeg
+* optimised 'has human-readable metadata' test for a fast yes in many cases
+
+### new graphicsview thumbnail grid test
+
+* the new 'thumbnail rendering tech' TEST under `options->thumbnails` is fixed up a bit and ready for advanced users to tentatively try out. I think I have it doing pretty much everything the existing code does without complaint, but I would like to confirm that with a broader test. it only applies to new pages, so I recommend first opening a new page and do some of your normal stuff before you test your whole session with a full client restart
+* fixed 'collect-by' transitions, removing the ghost singles that hung around
+* fixed a late waterfall thumb keyerror when transitioning through collect-by states
+* fixed collections not redrawing for a new first media on sort-by changes
+* fixed updating the status bar on any collect-by change, in either old or new thumbgrid code. it now flips between '200 files' and '200 files in 12 collections' when you change the collections
+* fixed drawing of thumbs at higher than 100% UI scale (the bitmaps were cropped due to DPR fun)
+* fixed a blurhash thumb fallback route in the new test
+* shaved the test animation time down for snappier feel. I'm pretty sure the old animation is accidentally heavily curved so despite ostensibly being 0.5s it was visually done faster. new guy is now ~13 frames at 60Hz
+* did some KISS refactoring of this code
+
+### more de-laggification work
+
+* I hacked in a test last week to try a different way of scheduling jobs in the background. it worked very well and I seem to have found the cause of the 'I have a fat client and when it does heavy work like archive/delete filter commit, everything slows down a lot' issue. basically, when certain sorts of heavy work was going on, threads waiting on new work to do or database jobs to come back were getting into a kind of traffic jam and wasting lots of time figuring out who had to go first rather than letting the guy who was actually doing the work go ahead and do it. I have now replicated and cleaned my work to several places and big clients that do a lot should be a good bit less laggy when big things are going on
+* cleaned up the successful CallToThread anti-CPU-thrashing test, taking out older code and cleaning the loop of it
+* added anti-CPU-thrash tech to db mainloop
+* added anti-CPU-thrash tech to threads waiting on the db to finish current work
+* added anti-CPU-thrash tech to database jobs; when many threads are competing for the db, they'll wake less
+* added anti-CPU-thrash tech to network job waits; when many threads are competing for network resources, they'll wake less
+* added anti-CPU-thrash tech to pubsub, both in the managing daemon and any threads waiting on 'background work to free up'
+* added anti-CPU thrash tech to 'are we currently rendering any thumbnails?' wait, which a bunch of threads wait on before going ahead with their own work
+* added anti-CPU-thrash tech to the core read-write lock used in the filesystem. I was very careful here as this is not my fortÃ©, and tests are good. this should improve latency, particularly thumb and file loading latency, when many file imports are going on and the locks are churning, which is another place we've seen inexplicable lag during certain busy periods
+* retired the debug 'db ui-hang relief mode'. this was an interesting experiment but the incorrect solution to the problem of GUI threads waiting on the db
+
+### boring de-laggification stuff
+
+* wrote a new thread worker pool object to look after calltothreads
+* primary controller and test controller now use this same object to manage threads (test guy had its own hacky code before)
+* tightened up db mainloop shutdown--to assure that db jobs can wait forever safely, we now guarantee that every job posted will get explicitly woken with a result through db shutdown
+* network engine now guarantees every network job it gets will be done'd so waiting threads shall all be woken up on program shutdown
+* rejiggered some 'is it time to commit?' in db idle time stuff given the changes
+* cleaned up some thread status-checking locking, mostly in debug code
+* KISSed some network job status stuff, and removed some confusing shutdown detection from the core 'isdone' calls
+* removed defunct db I/O-locking error-handling code
+* pubsub takes work breaks more often
+* pubsub system now has a shutdown signal to tidy up waiters properly on shutdown
+* thumbnail caches now have an explicit shutdown signal and clean up after themselves better on shutdown
+* cleaned up some misc thumb cache code
+* misc shutdown code cleanup
+* reordered some controller shutdown code
+* misc cleanup of controller wait code
+* removal of spurious event flags in db and pubsub
+
+### future build committed
+
+* This release commits the changes tested with the recent future test build, which went well
+* the summary for this update is: loads of stuff
+* there are no special instructions for the update. update as normal
+* since library versions have been bumped, users who run from source will be encouraged to rebuild their venv on update this week.
+* the library changes are--
+   - `PySide6` (Qt) from `6.9.3` to `6.10.3`
+   - OpenCV (`opencv-python-headless`) from `4.12.0.88` to `4.13.0.92`
+   - `beatifulsoup4` `4.14.3` to `4.15.0`
+   - `cbor2` `6.1.1` to `6.1.3`
+   - `cryptography` `48.0.0` to `49.0.0`
+   - `Pillow` `12.2.0` to `12.3.0`
+   - `pillow-heif` `1.3.0` to `1.4.0`
+   - `pillow-jxl-plugin` `1.3.7` to `1.3.8`
+   - `pyopenssl` `26.2.0` to `26.3.0`
+   - `service-identity` `24.2.0` to `26.1.0`
+   - `numpy` `2.3.1` to `2.4.6` (this jump was a bit of a juggle, and now possible with OpenCV 4.13)
+   - `requests` `2.33.1` to `2.34.2`
+   - SQLite dll and sqlite3 terminal updated on Windows from `3.51.2` to `3.53.3`
+   - SQLite terminal executable `3.53.3` now added to Linux and added to new db folders just like the Windows extract
+* the 'test' library changes are--
+   - `PySide6` (Qt) from `6.10.3` to `6.11.1`
+   - OpenCV (`opencv-python-headless`) from `4.13.0.92` to `5.0.0.93`. I did some research, and this upcoming jump doesn't seem to be a super significant change for our purposes. mostly C++ cleanup and finally dropping python 2 support.
+* other stuff--
+   - db folder is now completely masked in gitignore
+* build environment--
+   - updated the workflow actions versions across the board
+   - Windows and Linux builds are moved from python 3.12 to 3.13
+   - `pyinstaller` `6.16.0` to `6.18.0`
+   - the builds now share the core pyproject.toml rather than using their own requirements.txt files
+   - `pywin32` in Windows build env from `311` to `312`
+   - Windows ffmpeg (GyanD) `8.1.1` to `8.1.2`
+   - Linux build now comes with ffmpeg (BtbN) `2026-06-30`, which I think covers `8.1.2`
+
+## [Version 680](https://github.com/hydrusnetwork/hydrus/releases/tag/v680)
+
+### misc
+
+* updated the newish `tldextract` stuff (which helps navigate two-part domain suffixes like .co.uk in URL parsing) to no longer fetch a fresh suffix definition file on first ever use from `publicsuffix.org` and not to make a cache in `~/.cache/python-tldextract`. hydrus now ships with a copy of `public_suffix_list.dat` in the static dir for this library to use, and it doesn't make a cachedir entry any more. I regret not reading the docs closer! I also optimised this code so it should be a bit quicker now, too. thank you to the user who noticed this! (issue #2067)
+* I _think_ I may have fixed some of the heavy CPU thrashing we have seen during heavy work like archive/delete commit and such. if you have had bad UI lag, I would like to know if some of it suddenly leaps forward today
+* made file add/delete calls a tiny bit faster when they have many tags
+* some thumbnail generation scheduling is a little smarter, with expensive filetypes generated more reliably at the end of the queue
+* fixed thumbnail generation for cbz. sorry for the trouble--I messed something up with a recent refactor! all cbzs imported since july 5th will get a thumbnail regen call (issue #2069)
+* setup_venv.py now warns the user that the path will be deleted if they specify a non-standard venv path that already exists
+* added a little safety warning to the Client API page. I don't make any of those plugins and cannot guarantee anything about them--use your common sense!
+
+### system tray
+
+* you no longer need to be in advanced mode to see the system tray icon in Linux (old safety check I forgot about)
+* added two BUGFIX checkboxes to `options->system tray` for those who have odd minimise-to-system-tray behaviour. if you had trouble, try these out and let me know what works
+
+### number locale
+
+* added `TEST: Use your locale for integer rendering` to `options->gui`. try it out, let me know where it works well and badly. I noticed in a fake `fr_FR` locale that the space-separator somehow messed up some taglist rendering and made system predicates no longer parse correct (I guess I hardcode commas out of numbers)--anything else?
+* `system:filesize`, `system:ratio`, and `system:num pixels` now render with separators when the number exceeds 999
+
+### file permissions
+
+* there were some file import paths that did not set the standard hydrus file storage 'you can read and write this guy' permission bits (read+write on Windows, 644 otherwise), which I have fixed. this was affecting some downloads and some local file imports for some time in hydrus's past
+* if we try to move a file during larger 'move this directory here' type operations and get a permission error, hydrus now attempts to assign the hydrus-normal read/write permission bits before trying once more (issue #2064)
+* we are dealing with some legacy read-only guys here. I have a file maintenance job that tries to fix this retroactively, which I am considering firing off, sometime, to address this
+
+### embedded metadata
+
+* the test for the presence of file metadata is now more reliable and reflects what you see in the media viewer. previously, the file may not have been loaded the whole way during file import or file maintenance, and sometimes text was being missed, particularly in the new system where I filter out some stuff like DPI. it wasn't being missed in the media viewer since by happenstance it would generally check for EXIF beforehand, which triggers a full load. now, the thing that fetches embedded metadata now checks the file is loaded fully before grabbing the available text
+* when importing files, the embedded metadata test now saves an image load (it re-uses an earlier EXIF load, if one happened) to save a bit of time
+
+### future build
+
+* I am making another future build this week. This is a special build with new libraries that I would like advanced users to test out so I know they are safe to fold into the normal release.
+* in the release post, I will link to this alternate build. if you are experienced and would like to help me, please check it out
+
 ## [Version 679](https://github.com/hydrusnetwork/hydrus/releases/tag/v679)
 
 ### misc
@@ -154,405 +522,3 @@ title: Changelog
    - fixed thumb resolution stuff for non-resolution-having media when cache entry is invalidated
    - made thumbnail 'media' (and the new 'is_selected') bools public
    - tiny bit of thumb gen optimisation
-
-## [Version 676](https://github.com/hydrusnetwork/hydrus/releases/tag/v676)
-
-### more UI updates
-
-* thanks to a user, we have a slew of additional UI improvements: (#2037)
-* per-viewer mute under media viewer right-click menu!
-* slideshows can now shuffle and 'play media once through' on a per-viewer basis
-* the 'stop' slideshow menu entry now shows the current slideshow period
-* a new type of 'interactive' shortcut action, for the media shortcut set. you set a tag or rating service but nothing else. when you hit the shortcut, it asks you which tag or rating you want to set!
-* new options to choose which types of zoom 'zoom switch' switches between and configure how collapsed the 'eye menu' is under `options->media viewer hovers`, in the new `top hover button/menu controls` panel
-* persistent 'be silent on crashy stuff' mpv option unher `help->debug->debug modes`
-
-### misc
-
-* the `-d` launch parameter for the program now expands a userpath db path correctly. `-d=~/hydrus` now resolves to your user dir properly
-* in the parsing UI, the 'test' panel's preview area, where it shows what you downloaded/pasted, will now show up to 500,000 characters before clipping (up from 65536 chars), and the upper description is now clear when this happens
-* added `TEST: import local files directly from source, do not copy to temp dir beforehand` option to let some advanced users try out direct import. we needed to copy to tempdir in the old days so that some media scanning libraries would not have to deal with cyrillic or other uncode characters in paths, but this situation seems to be resolved these days, so let's try without. if it works ok IRL, I'll keep this for those who do still need a temp dir interim but flip the default behaviour
-
-### stylesheet paths
-
-* me and the guys who make qss stylesheets have been fighting an issue for a while regarding loading external assets, like a little .svg for a button. I solve this today, and it will make loading up stylesheets with assets from your db dir or in the built release much more reliable
-* anyone who was on the `_built_release` versions of the stylesheets will be migrated to the normal ones on update. the `_built_release` versions are deleted from the defults qss dir as the problem they addressed is solved in a better way
-* for the specific change, the new 'absolute path qss test mode' proved successful, so it is now the norm. stylesheets now have to specify their paths in one particular way and I handle the path juggling on my end, on load. the readme.txt in the qss dir is now explicit about this, so if you make qss stylesheets and haven't seen it yet, check it out
-
-### opening new pages with the client api
-
-* thanks to a user who did a really comprehensive job, the Client API gets a new `/manage_pages/new_page` command. it covers pretty much everything, including, say, a new local import page with a list of files. check out the new documentation here: https://hydrusnetwork.github.io/hydrus/developer_api.html#manage_pages_new_page
-* the user also fixed Client API file sorts not defaulting to asc=true and a focus issue when pages are closed
-* the Client API version is now 93
-
-### parsing logic fixes
-
-* _this is for advanced users who make downloaders_
-* with the help of a couple users who poked around my tangle of gallery parsing code, I think we've fixed some stupid parent-child inheritance stuff where a gallery object would take too manytagsfromcertainpostparsesandthenpassthatontoa'nextpage'galleryurl,particularly,say,ifthatnextpageurlwasauto-generatedbtwmyspacebarbrokewhenwritingthis (issue #2035)
-* keyboard fixed. so, I KISSed how gallery objects create child file import objects and sub-gallery urls and next-page gallery urls. there is less overlap of responsibility between an object passing metadata down and a post parse passing metadata down (this latter system is much better these days, and old hacks in the former pipeline were causing the main issues here). gallery import objects will now not update themselves with parsed tags and referral urls after the fact; only their children will get the metadata from their parses
-* relatedly, I cleaned up how file objects create child file download objects. previously, there were separate pathways for file parses that uses subsidiary parsers vs those that simply had a flat content parser that produced multiple urls and then another for a single url that turned out to match a post url class. this has all been collapsed into a single KISS route that says 'if one file url, eat up the metadata from the parsed post and then download it; else create n child objects'. some bespoke error states like 'hey I grabbed one url, it was a post url, but there's no parser for that url' are now deferred and will just get processed as a normal child file import object
-* also cleaned up some crazy python module inheritance happening here
-* overall, things should be more reliable, and the inheritance of metadata from one import object to the next should be clearer. let me know how it all goes for you
-
-### source setup
-
-* `setup_venv.py` now takes an optional `-i` parameter for non-interative (i.e. automated) installs. `-i=s` will do the simple mode, `-i=a` will do the advanced mode with all test/yes choices
-* `setup_venv.py` now expands a userpath venv path correctly. `-v=~/hydrusvenvs/venv313` now resolves to your user dir properly
-
-### safer builds
-
-* thanks to a user, our github build scripts, including Docker, now freeze the various github actions we use (e.g. a thing that says 'ok grab that build zip you just made and upload it to the release') to known good sha256 hashes, rather than getting the latest, say, 'v6'. this insulates against a supply attack, like we've seen recently, ensuring we won't use an action that was updated two hours ago by a bad guy to do bad things
-* there's a script also that updates the hashes. I'll be running this regularly to keep up and verifying every time it does. dependbot apparently interrupts whenever it is a big deal, too
-
-### startup/shutdown
-
-* the `twisted` library, which we use to host the client api and server services, is now started and stopped in a nicer way. previously, it was hacked into the boot scripts. now the main hydrus controller handles it and delivers some additional hydrus shutdown signals
-* `twisted` now only spins up on the client if you actually start up the Client API
-* when 'shutdown report mode' is on, the final client exit moment now prints all alive threads with their name and daemon status. if you have been working with me on the 'program is down but process is still alive', let's see if this catches it
-
-### some help docs work
-
-* rearranged and brushed up the Linux section in 'getting started - installing' and added more notes/links to 'hey running from source is over here'
-* removed the old Win 7 support comments and updated the Win 10 bits to be 'time to move to Linux m8'
-* updated the 'running from source' help to talk about `pyenv`, which makes it easy to install and use a different version of python with hydrus
-* updated the 'running Windows version in Wine' help document for the newest version and added info about Bottles: https://hydrusnetwork.github.io/hydrus/wine.html . I managed to get v675 up with a minimum of fuss and not too much weirdness (even ffmpeg and mpv worked!?!), so I now have a basic Windows test environment, hooray. doing it manually with winetricks on my system wine-9.0 did not work, it needed Bottles's newer wine-11.0
-* added easy copy buttons to the command quotes in 'running from source' help
-
-## [Version 675](https://github.com/hydrusnetwork/hydrus/releases/tag/v675)
-
-### misc
-
-* the command palette will now _not_ highlight an item if the initial results list opens underneath the mouse. I'm trying to resolve a common annoyance here, but I don't use this much IRL, so let me know how this feels to you
-* the new 'recognise an unmounted NAS as similar to a missing path on boot' error catching now detects a locked bitlocker drive on Windows. updated the UI text in the dialogs around this, too
-* fixed an unhelpful old status check that said 'if all network traffic is paused, repository sync maintenance daemon will not work', which was blocking local-only repo processing
-* added a link to 'Hydrus Slideshow Frame', a user-made KDE Plasma Widget for a hydrus photo/slideshow frame, to the Client API help (https://github.com/apampurin/hydrus-slideshow)
-
-### custom stylesheets
-
-* A hydrus user created a bunch of great 'Nereid' stylesheets right here: https://github.com/6788-00/nereid-theme-hydrus . these are now rolled into hydrus by default
-* for stylesheet creators, I had an idea how to fix the external asset relative/absolute path problems we've had. I have written a test and would love to have some feedback on Windows and macOS. To do the test--
-    * create/copy a new stylesheet into your `db/static/qss` folder. change any 'url' paths from any existing `url("path/to/my/db/static/qss/blah/my_image.svg")`, to `url("static/qss/blah/my_image.svg)`, as if it were loading from and relative to the install dir. if you are copying from the install qss dir, maybe the paths are already in this format
-    * hit up `help->debug->debug modes->qss absolute path test mode`
-    * load your QSS file in the `options->style` section. ok the dialog if you need to hunt around for an asset. did the assets load ok?
-* let me know how it went. in that test mode, I detect paths in the normalised format and swap them with the absolutes on load. if things worked multiplat, I'll make this normal behaviour and this problem is fixed
-
-### new thumbnail GraphicsView test
-
-* a user has rewritten my ancient old thumbnail grid to a new Qt-nice rendering system. I really appreciate his work. I have integrated his code as a new test, and early results are very promising
-* it is not ready for normal use yet and still has bugs/jank. it is under `options->thumbnails` as an EXPERIMENTAL TEST, DO NOT CLICK checkbox
-* I'll keep working on this, but as it matures, we should have masonry layouts, vertical grids, more dynamic thumbnail sizes, and all sorts, all in a nicer drawing system with more animation options and so on. some bad old design ideas are being swept away at the same time
-
-### boring cleanup
-
-* if `twisted` (the networking library we use to host a server) fails to un-set the current hosting services on program close, the error is now printed to log. previously it was silenced. I'm narrowing down on a 'the program seemed to shut down but the process is still alive' issue, and I think it might be an overloaded/deadlocked Client API doing it
-* updated the 'help my db is broke' file a little regarding clone vs repair
-* fixed a note in the example .desktop file
-* did some misc linting
-* fixed missing executable permissions on the scripts in the main repo. sorry for the long-time problem here
-
-### new dev machine
-
-* just as a side thing, over my vacation I moved to a new dev machine. I'm finally on Linux to dev. I took the opportunity to rework my very messy dev environment and personal workflow and note-taking. my situation is far less stupid now, with a sensible and pleasant IDE connection to the github repo, a browser not overflowing with tabs, and a zeroed-out desktop and daily todo and such. I've got dozens of pages of overflowing note mess to still slowly work through, but I'm going to devote some specific sunday work time to project management and try to stay on top of it going forward!
-
-## [Version 674](https://github.com/hydrusnetwork/hydrus/releases/tag/v674)
-
-### misc
-
-* you can now customise how mouse wheel events propagate out of the hover taglist in the media viewer. this has had a variety of hacky/patchy behaviour before; now you can hit up `options->media viewer hovers` and tell it to: never propagate; propagate only if no vertical scrollbar; propagate only if vertical scrollbar hasn't been used recently (the new default behaviour); and propagate immediately after scrollbar hits an end (which is what Qt _wants_ to do). this new 'has been used recently' tech locks you in the outer or outer context and uses a little voodoo, but I quite like it (issue #2024)
-* thanks to a user, the human-readable embedded text section in the media viewer little button up top will now decode and show an embedded `Character Card V2` spec. previously, it would just dump the json string under 'chara', but now it looks a good bit better
-* the help docs built into the Windows and Linux builds and the one built by the 'build_help.py' script by users running from source are now built in a more strict offline mode that caches the javascript for search tech locally. a user noticed they were previously fetching something from unpkg.com. now they should work properly even on a completely offline machine (iissue #2023)
-* a variety of file existence checks and merge functions now check for 'hey this seems to be a remote storage that is disconnected/timing out' error states. previously these guys were just doing 'file does not exist' catching. this means booting the client with your NAS defined in some way but not mounted has nicer error handling. you'll get the repair locations dialog with an updated message rather than 'oh god unhandled boot I/O error aieeeee'
-* added 'shutdown report mode' to the `help->debug->report modes` menu. this will report the shutdown calls, shutdown exception catches, and actual mainloop shutdown of all the program's thread workers and other mainloop daemons, with the intention of helping figure out some situations where the client will exit seemingly fine but with a silent low-resource process lingering (we think it is a thread orphaned from the signalling system or otherwise stuck in some deadlock)
-
-### cookies.txt and expiration fixes
-
-* when importing cookies.txt, 'session' cookies (i.e. those with no expiry) are now imported correctly. previously, they were being parsed as 'discard immediately' and were not being preserved
-* fixed issues with sessions not saving new cookies after import via cookies.txt or clipboard if the user closed the client before that session was actually used in a request
-* I hadn't realised, but hydrus was not being very aggressive about clearing 'session' cookies. after thinking about it, this is now intentional policy. I will add some buttons/options around this in future
-
-### some repository account refresh cleanup
-
-* the way repositories sync their accounts is a little cleaned up. clicking 'refresh account' is nicer and more reliable now
-* the awkward and confusing 'network'/'hydrus account' panels in 'review services' for a repo are now merged into one expand/collapse box called 'hydrus service'. service status/errors usually appear on the top box while most people need the bottom; now you always see both at once. hope this makes some 'oh, everything is paused' situations a bit clearer
-* the 'message' status text line in the 'account' panel now hides if there is no server message to show. this guy was just a weird UI gap for pretty much everyone
-* 'refresh account' no longer disables itself when a repo is non-functional. this was another 'technically true, but not helpful' UI thing. if you click it, any blocker now gives a richer reason, with several generic 'account cannot sync right now' reasons replaced with the actual part of bandwidth tracking or whatever that is complaining
-* if you try to hit 'refresh account', it now recognises if all network traffic is currently paused and breaks out early. previously, it would grey out and wait indefinitely until network traffic was unpaused
-* a 'refresh account' call no longer sets a temporary 'unknown/unsynced' account to the service. if the fetch job fails, you keep the old account info
-* errors from 'refresh account' are no longer put into toaster popups
-* the 'tag filter' button for tag repositories is moved from 'network sync' to the new 'account' panel, beside the permissions button
-
-### curl_cffi
-
-* the recent test of `curl_cffi`, which adds http 2 and 3 support to hydrus, has proven successful. I am maturing the test and allowing a permanent on setting
-* you now set the browser name under `options->connection`. http version selection is removed from the test--it seems it is doable and simpler to just let `curl_cffi` figure that out
-* the setup_venv.py script now asks if you want `curl_cffi`
-* `curl_cffi` is disabled for hydrus servers for now; we had some chunking issue when downloading from the PTR
-
-### domain manager background work
-
-* I moved forward my plans to launch a nicer unified 'here are the current statuses and settings for each network domain' UI and options system. this thing will eventually manage per-domain error timeouts, custom headers, perhaps some proxy settings, curl_cffi, and have some UI for recent errors. we'll migrate the stuff in `options->connection` to a 'global' entry and then allow more specific network context settings for particular domains; the usual deal
-* I was thinking I'd launch a stub of this system to allow for a per-domain `curl_cffi` test, but I didn't want to rush it out, so I just kept to prep work and there's nothing launching here yet. I rounded out the objects I already had and verified the direction I'm going; I feel overall good about it
-
-### boring stuff
-
-* refactored some of the 'render human-readable data' method for KISS
-* fixed some multi-line indenting in the human-readable rendering routine
-* KISSed some inelegant 'clear expired cookies' calls and code
-* added `help->debug->scan file storage folders`, which is just a test for a folder precache thing that I removed at the last minute last week when it performed terribly on an IRL spinning HDD. I rewrote it and will do some more testing
-* cleaned up some error handling in 'server busy, try again later' parsing
-
-## [Version 673](https://github.com/hydrusnetwork/hydrus/releases/tag/v673)
-
-### misc
-
-* the file history chart now has a custom y axis range. also, the chart now remembers if you have set either axis custom and new searches will auto-refit or maintain current dimensions as appropriate. hide/showing the lines will only recalculate the non-user-customised Y axis; let's see how that goes
-* added a sanity check to the new fast 'give me the average character width' calculation, which is used for some scaling-agnostic UI sizing. one user (on a monospaced font, no less) had extremely wide average character width; I guess the font has funny kerning or extended characters or something. if the average character width is more than twice the reported height (which appears to be more reliable), I now fall back to a slower but more accurate calculation
-* you can now edit the Access Key of a Client API permissions entry (a user mentioned they were migrating to a new client and updating every existing script to use new random keys was a pain). since you don't want to do this casually, it works through a button that gives a little spiel and tests the new key for validity and such, and the final ok will bail out if you paste something already in the system
-* updated some system predicate parsing to support `<=` and `>=` operators, along with some variants like 'less than or equal to'. the types now supporting this are: width, height, duration, number of frames, number of words (issue #2019)
-
-### new help docs for the recovery.txts
-
-* added a 'Recovery' headline section to the help and migrated the .txt recovery docs to basic markdown
-* the basedir 'help my client will not boot' is migrated to here
-* all the .txts in the db dir like 'help my db is broke.txt' are migrated to here
-* as planned, the `static/db_files` dir is removed. you no longer get a bunch of .txts in any new db folder. feel free to delete any old ones you have, but it isn't a big deal
-
-### local file parsing optimisation
-
-* when you drop a folder on the program, the main scan of that folder is a good bit faster than before and will scale a bit better
-* when you drop a folder on the program, symlink loops are now recognised and broken out of
-* when parsing import files from a folder, the main parse object now uses several fewer drive hits
-* checking for 'file is in use' requires one less drive hit
-
-### faster folder checking on startup
-
-* when hydrus boots, it checks for the presence of all file storage folders. on a normal client, this is 512 directory presence checks; on an advanced granularity 3 system, this is 8192. this time adds up on boot, particularly on a cold HDD. I have improved the regular test here to do just one hard drive hit per folder instead of two. also, especially for the bootup phase, these locations are now scanned for _en masse_ with a carefully efficient/failsafe top-level scan on the main storage locations, massively reducing the number of hard drive hits required here
-
-### optimised caching tech
-
-* a user identified that a hacky id-to-value lookup cache used in tag and hash database modules was not working great. under certain types of strain, it would churn, leading to memory bloat and fragmentation
-* I have tried several solutions and figured out a fairly decent replacement (LRU cache, nothing crazy) that will not churn so much and has less overhead. there's some additional long-term work that needs to be done to solve the bloat problem fully (full weakref tracking of tags/hashes), but I'm overall happy. tag and hash fetching when you load media or do various other heavy database jobs is now a little more optimised in several ways, and in most cases causes less memory duplication and fragmentation
-* while I was poking around here, I also overhauled the general LRU cache used by a bunch of UI-level guys. thumbnail refetch and image zooming back and forth may be a shave faster
-
-### source environment cleanup
-
-* as planned a few months ago, v673 cleans up the 'running from source' setup significantly. you shouldn't have to do anything unless you run from source and use a custom script to automatically recreate your venv. I delete some old redundant scripts today, so if you happened to set an executable permission on something a long time ago, git may moan at you about being unable to pull because of your pending changes. deleting the files and then pulling again should work
-* the pyproject.toml file no longer has any groups. there's one setup, nice and simple. the venue to test alternate library versions is now `setup_venv.py` exclusively
-* the old basedir requirements.txt is now removed
-* the manual 'running from source' help is updated. you now do just `pip install .` for a manual, pyproject.toml based pip install, with no groups needed
-* the .bat/.command/.sh versions of `setup_help` and `setup_venv` and `git_pull` are removed--use the multiplat .py files from now on
-* the `open_venv.bat/.ps1` scripts and `auto_update_installer.bat`, which were just fun experiments, are deleted. if you need some rinky-dink scripts to pull off a very custom thing like this, I recommend talking to an AI to get exactly what you need for your setup
-* to improve hydrus package security, all dependency versions in the pyproject.toml and setup_venv.py and the build requirement.txts are now pinned/capped to recent latest versions. anything that was `>=` is now `<=` for the version as of the 672 build. all library version updates will now be considered manually by human eyes in future builds
-* relatedly, the windows ffmpeg version is no longer latest but pinned at `8.1.1`
-* deduped the basedir license files and renamed to `LICENSE`
-* wrote a very basic `CONTRIBUTING.md` to mention that public pulls are closed right now
-* for KISS, I'll switch the builds from their requirements.txts over to the pyproject.toml in the next future build test
-
-### boring cleanup
-
-* moved some file parsing code out of `ClientGUILocalFileimports` to `ClientImportFileParse`
-* jiggled some 'make this panel x characters wide' numbers after last week's character-width update. this generally meant clearing out old +2 padding hacks and shaving some 64 to 60, that sort of thing, and I fixed a couple of things that were a little out of whack or sizing the wrong widget
-
-## [Version 672](https://github.com/hydrusnetwork/hydrus/releases/tag/v672)
-
-### misc
-
-* fixed a stupid error where the new-ish `media playback->ffmpeg call timeout` setting was not hooked up correctly on options dialog ok and was not saving! sorry for the trouble, I don't know how this slipped through testing
-* fixed an issue where edit-pasting a prefixed 'sha256:abcd...'-style hash into an existing 'system:hashes' would wipe out the existing hashes (issue #2015)
-* fixed the 'is this video rotated 90 degrees?' test in my ffmpeg output parsing for ffmpeg 8.1.x (which the windows builds moved to recently) (issue #1377)
-* improved the speed and precision of the core call in the 'hey roughly how wide is 16 characters for this widget?' size calculations used by stuff across the program. system:hash panel should fit better in different fonts and sizes now. this may make some tight multi-column lists (like the one in duplicate page, auto-resolution tab) go a bit wide, requiring you to shrink them a little manually to hide new horizontal scrollbars--forgive me
-* if a PNG file has chromaticity data but not gamma data, I now sub in a gamma of 0.45455 (which works well as a best-case fallback), and continue with the new ICC Profile-based chromaticity correction. thanks to the user who noticed this in the duplicate filter and had example files to test that rendered with a slightly different glow but were inexplicably marked, in an older version of the client, as pixel dupes
-
-### duplicates auto-resolution
-
-* the cog icon of the potential duplicate par search panel (which you see on dupe pages and a couple other places in auto-resolution UI) has a new 'start new potential duplicate pair search panels paused' entry. if you use a bunch of these and wrestling with the pause status is annoying, try it out
-* you can now use 'system:number of pixels' in the single-file 'test A or B using search terms' comparator
-* you can now use 'system:ratio' in the single-file 'test A or B using search terms' comparator
-* you can now use 'system:ratio' in the 'test A against B using file info' comparator, but the UI for it shows some default operator labels; `<` instead of `taller than`. the comparator summary label should work though
-* the system pred dropdown in that edit panel (this is the Metadata Conditional edit panel) collapses system:width, height, num_pixels, and ratio down to 'system:dimensions', like in a normal search page
-* added unit tests for the new comparators
-
-### some import options follow-up
-
-* added three simple examples to the top of the new import options help for 'setting up import previously deleted'; 'sending some tags elsewhere'; and 'forcing a tag redownload' as a stepping stone between 'ignore this whole system m8' and 'how to harmonically conjunct the polyhierarchic metalateral defaults'
-* also added an example of how to customise and clone URL Class defaults
-* added a 'help for this panel' button that links to the html help to the regular edit import options panel
-* the regular edit import options panel's favourite button has a new 'save current value as new favourite' entry in its menu, under edit/add
-* in the new import options system, the 'locations' import options now shows for post urls, watcher urls, and the subs defaults in simple mode
-
-### client api
-
-* added `/client_info`, accessible to all valid access keys, which provides a random hex `boot_id`, a float `boot_time`, and `currently_idle` bool, for tracking client restarts and throttling decisions
-* Client API version is now 92
-
-### boring cleanup
-
-* the 'fetch service id' button in review services has nicer error handling and now disables the button while it works
-* cleaned up how the 'set forced mimetype to these files' operation works behind the scenes
-* reworked how the sidebar taglist broadcasts tag changes to the current search; moving from an old pubsub to a newer Qt signal
-* fixed an issue with dissolving an OR predicate from the active predicates menu where the signal was being double-sent
-* reworked the `NumberTest` rendering tech to better handle custom number and operator rendering
-* the Number Tests across the program, which power a bunch of the newer system predicates where you can say 'width is approx 400 +/- 15%' are no longer coerced to integers behind the scenes. this doesn't affect much, but in the duplicates auto-resolution system, where you can do `A has height > 1.8x B`, that multiplier can now result in a float. in the trivial case of B height `1`, `1 * 1.8` is now less than `2`, rather than being rounded up
-
-## [Version 671](https://github.com/hydrusnetwork/hydrus/releases/tag/v671)
-
-### import options overhaul
-
-* the frontend and object storage is moved to the new import options system! there's a bunch going on here, but in brief--
-* the old file/tag/note import options are split into seven smaller types: prefetch, file filtering, tag filtering, locations, tags, notes, presentation
-* your old options have been converted to the new system and it should all work as before, with only minor logical changes. you do not have to do anything
-* all the defaults are now edited in `file->options->import options`. the system is richer and supports favourites/templates for quick-load
-* all the 'import options' buttons across the program use some slightly newer UI and offer quick 'load from favourites'
-* the 'edit subscriptions' dialog now has a column to show a summary for any custom import options you have set
-* the 'edit subscription' dialog now has a column to show a summary for any queries that have 'additional tags' set up
-* full help, now with screenshots, is here: https://hydrusnetwork.github.io/hydrus/getting_started_import_options.html
-
-### misc
-
-* the pretty media info lines that appear on a single media right-click flyout menu and some other places now includes a `approx bitrate: 1.4MB/s` line. it is pretty similar to the 'sort by approx bitrate' sort but only appears for stuff with an actual duration (the sort also puts big static images before small ones). it is just a naive `size / duration` and it'll do `1.4MB/s` with existing display tech rather than `7,200KBps` as you otherwise usually see, so I may revisit when I eventually get around to 1000/1024 byte-count presentation options and such
-* renamed the shortcut labels 'close page' and 'restore the most recently closed page', to 'pages: close current' and 'pages: unclose the most recently closed'
-* added a 'pages: rename current' shortcut to 'the main window' set
-* fixed the setting of referral urls to child import objects in two cases: A) when a file import produced multiple child urls with the note `Found x new URLs in one post` and B) when a gallery url in the search phase produced an unexpected non-gallery url because of 3XX or api url class redirection with note `was redirected to a non-gallery url, which has been queued as a file import`.. the referral url was not being set correctly because of a regression in v664. thank you to the enterprising user who ran this through Codex to find the solution
-* fixed a foolish typo that broke importing a cookies.txt (issue #2011)
-* when loading a cookies.txt, if the file includes some complicated utf-8 encoding that the current default locale cannot decode, I now catch the decoding failure and try to recover with a newly encoded temp file (also issue #2011)
-* fixed a bit of page counting logic that would turn up in some 'hey do you want to close the x pages?' labels and some 'do to current page' logic, where a page of pages was not counting child page of pages
-* updated the base `requirements.txt` to match the future build stuff we folded in recently. missed this guy by accident; he'll be deleted in v673 in lieu of the cleaner `pyproject.toml` that's coming up
-* did a quick hotfix patch to master for the curl_cffi test, which was frozen by accident at chrome/http2
-* added a note to the installation help, Linux specifically: if you get a crash on any keypress after booting the client, you probably need to run from source (issue #2010)
-* added some careful typedefs and imports to fix a deferred import that was causing certain recent database updates to fail out when trying to load the core options object
-
-**normal users do not pass this line**
-
-### import options detailed changes
-
-* an import options manager with default settings is now created with a new db
-* on update from v671, your existing quiet/loud file import options, post/watcher tag/note import options, and all the url class tag/note import options are converted into a new import options manager. the old settings are deleted from your options and domain manager objects once it is all done and clear
-* a new button-with-a-dropdown-menu-arrow to handles the import options container of a specific import context. its arrow menu offers a detailed review of what it currently holds and supports quick 'favourites/template' loading
-* the 'fetch page metadata even if hash/url recognised and file appears "already in db" stuff is moved from tag import options to the new 'prefetch import options'. this is the only movement of options; everything else has been separated into the sub-panels you've seen in recent weeks
-* updated the new system's freeze routine to consult both the given url of the import object _and_ any referral url, _and_ if either is an API redirect, to look up every url class in the api redirect chain and select the first for which there is a custom import options entry. previously, referral url lookup was spotty, and it would only ever look at the final place in the api redirect chain. very sophisticated setups can now have separate per-url-class import options that nonetheless connect to the same final api url class
-* import folders and subscription queries now add 'additional tags' even if the file ends up 'previously deleted' (all imports generally apply new content updates to a 'previously deleted' result, so this brings these supplementary tags into normal behaviour.) I may add an option around which import statuses quality for a post-import content update commit, now everything is on the same page
-* if you hop skip and jump, you can now set 'additional tags' to a local file import that is entirely adjunct to the normal filename tagging system. there's probably some weird edge undesired behaviour now, because of odd new capabilities like this, so I'm interested in error reports or 'hey you should probably hide this by default here' reports
-* made some svgs and screenshots for the new import options help, removed the old help, integrated it all into the 'gettting started - downloading' help, and added it to the main index
-
-### import options detailed fixes
-
-* fixed some import situations (usually when the import object had no other tags to add) where 'additional tags' in a tag import options might not be added
-* if a file import results in 'ignored' but somehow gets an sha256 hash (local imports hit by file filtering rules would get this), no post-job content updates like urls or tags will be added to the file
-* in edit subscriptions, the 'set file/tag/note import options' stuff is merged into one and there are copy/paste/favourite buttons like in `options->import options` with the same clever paste-merge tech. there is also a new column to see which subs have custom import options set. just a bit easier to mass-manage custom options here now
-* fixed a bug with adding a _watchable_ URL with a custom import destination (via Client API); previously, it would just to the first watchable page. now it checks and creates a new one with the desired custom location import options as needed
-* tag import options now present a single-line summary (they'd spill over to multiple lines when things got complicated), with some tighter syntax
-
-### client api
-
-* the `get_client_options` call no longer presents a `default_file_import_options` summary row
-* Client API version is now 91
-
-**non-hydev do not pass this line**
-
-### some last-minute fixes and tweaks
-
-* added some repair code for if your 'global' options container set is missing or missing a sub-option type. the holes are filled in and the fixed structure is saved back
-* wrote some more safety code to ensure a non-full global options container cannot be set to the core options structure with the issue reported nicely to the user
-* I didn't like how the favourite buttons were still loading up the complicated custom-merge dialog on 'load', so I made a quick-multi-load 'load' and slow-single-load 'custom load' menus. if you just want to set x to a big selection somewhere, no problem
-* same deal with the new general 'import options button'--I added a submenu to pull from the favourites, and you can 'load' in one click or 'custom load' if you need something like 'hey I just need the prefetch options from this template'
-* in the main edit panel, updated the options summary strings, which were in the form `file filtering: default/stuff` to `default file filtering` and `> file filtering: stuff`. this makes the non-default stuff stand out better, but maybe we can do more here. maybe this guy could evolve into a checklist or a multi-column list
-* the new vertically stacked listbook now disables horizontal scrollbar too (the scrollbar was drawing over the bottom item, let's go)
-* fixed an issue with my migration routine where a new container would not contain prefetch import options with the 'force refetch' stuff from tag import options when the original file import options was missing/default
-* updated the migration routine to abstain from adding prefetch stuff if it was uninteresting
-* updated all my importer migration code to safely attempt to determine the already-migrated defaults for this importer before migration so the 'if we don't disagree with our parent's defaults, we can set that sub-options to default' logic can kick in. this eases the transition and ensures we don't end up with a bunch of importers with default 'tag filter: allows everything' stubs because the user only changed the parsing rules
-* fixed a little thing in the import options manager initialisation where the defaults set the 'quiet' presentation rules to the Client API setting--the Client API import does not publish files anywhere, so no need for that
-* fixed an issue where the 'panel types to load for this import caller type' CONST reference was being unintentionally updated and thus poisoning later dialog opens
-* ditched the 'set and check full' system as too brittle with bad error handling
-
-### boring import options data migration log
-
-* all importers' storage and final pipeline: hdd imports, import folders, simple downloaders, url downloader pages; a couple of misc 'download these urls' routines used by stuff like IPFS, hydrus file repository download, gallery imports, the multiple gallery import container, watcher imports, the multiple watcher import container, client api imports, and subscriptions
-* subscription query 'additional tags'
-* migrated some network report mode stuff over to the new system as a frozen import options container is assembled with potential URL data
-* ancient legacy subscription update routine
-* subscription serialisation unit test
-
-### boring cleanup and refactoring
-
-* the import options manager now tracks if it is dirty and needs saving, and the main client controller consults that in the normal maintenance and shutdown cycle
-* removed the default file import options from `options->importing` and tag/note stuff from `network->downloaders->default import options`
-* deleted the old system's legacy edit panels and widgets
-* removed some hackery that made gallery/watcher list selection-inspection a little faster but was too beardy
-* the old `show_downloader_options` display option is replaced by direct `import_options_caller_type` inspection in all situations
-* wrote an `ImportOptionsMetatype` for our seven new sub-options to help some typing inference. all these guys now know their own `import_options_type` too, and some `Set` stuff is a bit simpler
-* moved the subscription query 'additional tags' button to a simpler single-panel-dialog solution
-* updated the UI for all importers to use the new import options container button
-* figured out some default/display fixes for the newer container edit UI panels to show the correct 'this defers to default type x' whether editing a default, global, favourite, or a specific importer
-* cleaned up some prefetch options juggling
-* improved some edge cases in the process by which paged importers figure out their best-guess current location context
-* moved some legacy presentation import options consultation in the gallery/watcher sidebar list menu is over to the new system
-* when a new url import page call wants to queue up urls with a custom import destination or, now, prefetch import options, this is merged into an import options container. as an edge-case logical change here, such jobs will no longer be added to pre-existing pages that have the same import destination and prefetch settings but other options differences. this is really in the weeds, but I may change this behaviour and just merge them into existing pages but with different import options; we'll see
-* a check that regularly goes 'hey are we still good to import stuff?' in all importers that reviews the validity of the destination import location (generally checking if we want to import to a local file domain that has since been deleted) has been cleaned up, refactored into one central location, and now consults the next-pending object for specific options. if someone sets all x url classes to import to 'cool places' and then deletes that, the queue now pauses ahead of time rather than spitting out a hundred errors. the actual exception raised here has an improved typedef, too, that the veto system catches easier
-* moved the new system's constants to their own `ImportOptionsConstants.py`, `as IOC`, so stuff can see them better
-* moved the new system's manager to its own `ImportOptionsManager.py`
-* moved some 'filter these pending tags this way' from the now-defunct `ClientImportOptions` to `TagImportOptions`
-* the various edit/custom-paste UI now obeys the 'simple mode :^)' set in `options->import options`
-* renamed the old `ClientImportOptions` to `CheckerImportOptions`, since that is all it does now
-* cleaned up some old rubbish `subscription.ToTuple` mess
-* cleaned up some misc bad code in hdd importers
-* deleted all the legacy UI code for the old system
-
-## [Version 670](https://github.com/hydrusnetwork/hydrus/releases/tag/v670)
-
-### misc
-
-* when you paste queries into the edit subscription window, it now shows you the pending changes, i.e. which are new/already in/DEAD,  _before_ you say yes/no. if you have DEAD, it asks with a yesyes/no if you want to revive or not
-* the 'rescue off-screen window' system now tries to slide windows down and/or right before falling back to 'topleft of primary screen'. for instance, if the off-screen dialog's originally proposed bottom-left corner would be in view on a particular screen, it now just slides the guy down a bit and adds any fuzzy padding. this makes the new 'put dialog over the mouse' mode nicer to work with near screen edges, although I need to do some more work to better handle particularly short dialogs and those that span across a multi-monitor border
-* for the new 'put the dialog over the mouse' mode, if the dialog would appear off-screen, it no longer gives you a 'woah, that was offscreen' popup
-* for the new 'put the dialog over the mouse' mode, if the current mouse cursor is so invalid it is seemingly not on any current screen, it falls back to 'topleft of parent mate'
-* if you run from source with a normal-looking 'venv' directory, any update that includes new package versions is now going to say, 'hey, looks like you are running from source. this is a good time to update your venv' when you update. this will happen in this release
-* thanks to a user, the F13-24 keys are now mappable in the shortcuts system
-
-### tag suggestions
-
-* in 'manage tags', on the 'related tags' panel, the 'do it just for my files/all known files' flipswitch is now visible on local tag services
-* the 'related tags' panel now has a tag service selector, so you can say 'hey provide related suggests from the PTR' for your 'my tags' and so on
-* the 'related tags' panel now has a 'searching through/not searching siblings and parents' button. this involves some black magic and I don't really know how well it works, but the tech seemed to be done db side so I just wired it up
-* this is mostly experimental. if you use this a lot, give it a go and let me know if any of it is useful. if you find you are setting something one way or another over and over, it might be nice to have it remember the last settings
-* the 'related tags' panel now displays sibling and parent relationships, like the other tag suggestion panels
-* if you hit either of the 'related tags' search-type buttons, or the media changes, the 'related tags' search now refreshes using the same duration that was last searched (or 'quick' if none has been done yet)
-* on tag menus, the 'favourites' sub-menu has been overhauled. for KISS, it now only appears when you have one tag selected, and it provides add/remove options for the general favourites _and_, now, all the 'most used' tag suggestion columns that appear in the manage tags dialog. ten points to anyone who can come up with a better names than 'most used tags' and 'favourite tags' that represents what they do while not confusing one for the other
-* on tag menus, an empty 'search' sub-menu no longer appears in contexts without any search-page stuff (e.g. manage tags was doing this)
-
-### curl_cffi test
-
-* a user pointed me at the `curl_cffi` library this week, which provides http/2 and http/3 support with a `requests`-like interface. I have written a very small and basic shim to test this out with our network engine, and a new test mode is under `help->debug->network actions->curl_cffi test mode`. it asks for some test details and then switches the whole network engine over.
-* very advanced source users can now add `curl_cffi` to their venvs and give it a whirl. if we discover it solves some problems that requests at http/1 can't handle, I'll formalise the test and plan out how to integrate this into a future domain manager so we can shape things to particular network contexts as needed
-* I cleaned a bunch of session code and figured out some nicer session switching/reinitialising-tech and cookie-migration tech. I feel even more optimistic about also playing with `httpx`, which is a comprehensive `requests`-like replacement that offers http/2
-
-### boring import options work
-
-* wrote out a draft of a help document for import options at `https://hydrusnetwork.github.io/hydrus/getting_started_import_options.html`. I'll populate this with nice diagrams and screenshots and insert it properly as this becomes real. if you have been following along here, feel free to have a look and let me know where I'm making mistakes
-
-### boring cleanup
-
-* added a little note to the 'running from source' help regarding ffmpeg on LTS Linux flavours--you probably have an old system ffmpeg, for good reason, so I now say how to find a newer one for hydrus if you like
-* added a small section to the backing up help on how to set up a wineprefix for ToDoList. if you try it, let me know if you have a different mfc experience
-* cleaned up how mouse coordinates are fetched across the program; everything now goes through one place. Wayland has some issues with this (generally, in Wayland, I only get the last place the mouse was seen over my UI panels), so I may end up inserting some DEBUG recoveries for when this gives crazy answers
-* decoupled a bunch of session and cookie code. the way cookies are fetched, inspected, and edited is a good bit cleaner and more centralised and abstract now
-* 'session' cookies are now cleared faster and each session maintains its connection pool less redundantly
-* misc refactoring to tidy up the initial import as the main controller boots. still lots to do
-* pulled `ClientMedia` apart and cleaned up some inheritance mess. this whole thing is still awful, but this was a good step
-* cleared out more linting issues with client media and friends, and in continuing a very long rewrite, a bunch of MediaSingle stuff is replaced with MediaResult, and a bunch of edge-case 'we wanted to show a collection, but it just lost its last member' bugs are fixed
-* fixed 'copy thumbnail bmp' for collections, which wasn't falling back to a nice default behaviour before
-
-### future build committed
-
-* This release commits the changes tested with the recent future build. The test went well, and there are no special instructions for the update. Source users are encouraged to rebuild their venvs this week. Update as normal, and you will get--
-* requests from `2.32.5` to `2.33.1` (security fix)
-* chardet from `chardet>=3.0.4,<6` to `chardet>=3.0.4,<8` (requests dependency issue resolved in the new version)
-* OpenCV from `4.11.0.86` to `4.12.0.88` (normal update)
-* dateparser from `1.2.1` to `1.4.0` (had a build problem before)
-* adds tldextract `5.3.1`, which provides for more sensible '.co.jp' top level domain recognition
-* setuptools no longer pinned at `78.1.1` for the builds (an old hack removed), seems to now be ~82.x
-* pyinstaller `6.14.1` to `6.16.0` for the builds (normal update, and by the hand of fate it worked)
-* test version of OpenCV from `4.13.0.90` to `4.13.0.92` (build dependency fix that'll hit us later)
-* test version of PySide6 (Qt) from `6.10.1` to `6.10.3` (normal update, but we discovered a fun bug yesterday in 6.10.1 that broke several lists and widgets)
-* Windows mpv dll from `2023-08-20` to `2024-08-18` (cautious update; we've had many issues trying newer mpv dlls over the years)
-* `action-gh-release` from v2 (Node 20) to v3 (Node 24) in the Linux and Windows build scripts
-* thanks to a user, the Docker package build files are also now Node 24 compatible

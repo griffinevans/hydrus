@@ -426,8 +426,17 @@ class TestClientDB( unittest.TestCase ):
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_EXIF, True, 0 ) )
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_EXIF, False, 1 ) )
         
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, True, 1 ) )
-        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, False, 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_XMP, True, 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_XMP, False, 1 ) )
+        
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_IPTC, True, 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_IPTC, False, 1 ) )
+        
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_SOFTWARE_SOURCE, True, 1 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_SOFTWARE_SOURCE, False, 0 ) )
+        
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, True, 0 ) )
+        tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_HUMAN_READABLE_EMBEDDED_METADATA, False, 1 ) )
         
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, True, 0 ) )
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_HAS_ICC_PROFILE, False, 1 ) )
@@ -511,7 +520,7 @@ class TestClientDB( unittest.TestCase ):
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA, ( ( pixel_hash, ), (), 0 ), 1 ) )
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA, ( ( os.urandom( 32 ), ), (), 0 ), 0 ) )
         
-        perceptual_hashes = ClientImagePerceptualHashes.GenerateUsefulShapePerceptualHashes( path, HC.IMAGE_PNG )
+        perceptual_hashes = ClientImagePerceptualHashes.GenerateShapePerceptualHashes( path, HC.IMAGE_PNG )
         
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA, ( (), tuple( perceptual_hashes ), 0 ), 1 ) )
         tests.append( ( ClientSearchPredicate.PREDICATE_TYPE_SYSTEM_SIMILAR_TO_DATA, ( (), ( os.urandom( 32 ), ), 0 ), 0 ) )

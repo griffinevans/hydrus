@@ -121,6 +121,8 @@ class DialogManageRatings( CAC.ApplicationCommandProcessorMixin, ClientGUIDialog
         
         CG.client_controller.pub( 'clipboard', 'text', text )
         
+        self._copy_button.ShowMicroNotification( f'Copied {HydrusNumbers.ToHumanInt(len(rating_clipboard_pairs))} ratings!' )
+        
     
     def _Paste( self ):
         
@@ -153,6 +155,8 @@ class DialogManageRatings( CAC.ApplicationCommandProcessorMixin, ClientGUIDialog
             panel.SetRatingClipboardPairs( rating_clipboard_pairs )
             
         
+        self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(rating_clipboard_pairs))} ratings!' )
+        
     
     def EventOK( self ):
         
@@ -176,9 +180,9 @@ class DialogManageRatings( CAC.ApplicationCommandProcessorMixin, ClientGUIDialog
             
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -190,15 +194,15 @@ class DialogManageRatings( CAC.ApplicationCommandProcessorMixin, ClientGUIDialog
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     class _IncDecPanel( QW.QWidget ):

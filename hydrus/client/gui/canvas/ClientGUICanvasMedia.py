@@ -9,7 +9,6 @@ from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusGlobals as HG
 from hydrus.core import HydrusNumbers
-from hydrus.core import HydrusPaths
 from hydrus.core import HydrusTime
 from hydrus.core.files import HydrusFileHandling
 from hydrus.core.files.images import HydrusImageHandling
@@ -17,6 +16,7 @@ from hydrus.core.files.images import HydrusImageHandling
 from hydrus.client import ClientApplicationCommand as CAC
 from hydrus.client import ClientConstants as CC
 from hydrus.client import ClientGlobals as CG
+from hydrus.client import ClientPaths
 from hydrus.client import ClientRendering
 from hydrus.client import ClientUgoiraHandling
 from hydrus.client.gui import ClientGUIExceptionHandling
@@ -28,7 +28,8 @@ from hydrus.client.gui import QtPorting as QP
 from hydrus.client.gui.canvas import ClientGUIMPV
 from hydrus.client.gui.canvas import ClientGUIQtMediaPlayer
 from hydrus.client.gui.canvas import ClientGUITransparency
-from hydrus.client.gui.media import ClientGUIMediaControls, ClientGUIMediaVolume
+from hydrus.client.gui.media import ClientGUIMediaControls
+from hydrus.client.gui.media import ClientGUIMediaVolume
 from hydrus.client.media import ClientMedia
 from hydrus.client.media import ClientMediaResult
 from hydrus.client.media import ClientMediaSingle
@@ -693,9 +694,9 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._paused = False
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -725,15 +726,15 @@ class Animation( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def resizeEvent( self, event ):
@@ -1412,6 +1413,7 @@ class MediaContainer( QW.QWidget ):
     launchMediaViewer = QC.Signal()
     readyForNeighbourPrefetch = QC.Signal()
     haveDestroyedAllMediaWindows = QC.Signal()
+    sendApplicationCommand = QC.Signal( CAC.ApplicationCommand )
     
     zoomChanged = QC.Signal( int, float )
     
@@ -1436,7 +1438,7 @@ class MediaContainer( QW.QWidget ):
         self.setSizePolicy( QW.QSizePolicy.Policy.Fixed, QW.QSizePolicy.Policy.Fixed )
         
         self._media = None
-        self._deferred_set_media_call = None
+        self._deferred_set_media_call: HydrusData.Call | None = None
         self._show_action = CC.MEDIA_VIEWER_ACTION_DO_NOT_SHOW
         self._start_paused = False
         self._start_with_embed = False
@@ -1460,6 +1462,10 @@ class MediaContainer( QW.QWidget ):
         self._close_check_timer.timeout.connect( self._CheckClosingWidgets )
         
         self._media_window = None
+        self._tie_media_window_to_pauseplay_state = self._canvas_type in CC.CANVAS_MEDIA_VIEWER_TYPES and CG.client_controller.new_options.GetBoolean( 'always_start_media_windows_tied_to_pauseplay_state' )
+        self._window_always_on_top_update_timer = QC.QTimer( self )
+        self._window_always_on_top_update_timer.setSingleShot( True )
+        self._window_always_on_top_update_timer.timeout.connect( self._UpdateWindowAlwaysOnTop )
         
         self._embed_button = EmbedButton( self, self._background_colour_generator )
         self._embed_button_widget_event_filter = QP.WidgetEventFilter( self._embed_button )
@@ -1642,7 +1648,7 @@ class MediaContainer( QW.QWidget ):
             return CG.client_controller.new_options.GetInteger( 'preview_default_zoom_type_override' )
             
         
-
+    
     def _GetMaxZoomDimension( self ):
         
         if self._show_action in ( CC.MEDIA_VIEWER_ACTION_SHOW_WITH_MPV, CC.MEDIA_VIEWER_ACTION_SHOW_WITH_QTMEDIAPLAYER ) or isinstance( self._media_window, Animation ):
@@ -2100,6 +2106,43 @@ class MediaContainer( QW.QWidget ):
             
         
     
+    def _UpdateWindowAlwaysOnTop( self, wait_for_double_click = False ):
+        
+        if not self._tie_media_window_to_pauseplay_state:
+            
+            self._window_always_on_top_update_timer.stop()
+            
+            return
+            
+        
+        always_on_top = self.CurrentlyPresentingMediaWithDuration() and not self._media_window.IsPaused()
+        
+        if always_on_top == self._canvas.IsAlwaysOnTop():
+            
+            self._window_always_on_top_update_timer.stop()
+            
+            return
+            
+        
+        if wait_for_double_click:
+            
+            if not self._window_always_on_top_update_timer.isActive():
+                
+                double_click_interval = QW.QApplication.instance().doubleClickInterval()
+                
+                self._window_always_on_top_update_timer.start( double_click_interval )
+                
+            
+            return
+            
+        
+        self._window_always_on_top_update_timer.stop()
+        
+        action = CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON if always_on_top else CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF
+        
+        self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( action ) )
+        
+    
     def AddPlayerMenus( self, menu: QW.QMenu ):
         
         player_menu = ClientGUIMenus.GenerateMenu( menu )
@@ -2136,6 +2179,8 @@ class MediaContainer( QW.QWidget ):
         
         self._media_window = None
         
+        self._UpdateWindowAlwaysOnTop()
+
         CG.client_controller.gui.UnregisterUIUpdateWindow( self )
         
         self.hide()
@@ -2301,6 +2346,11 @@ class MediaContainer( QW.QWidget ):
         return self._per_player_mute_state
         
     
+    def GetTieMediaWindowOnTopToPausePlayState( self ):
+        
+        return self._tie_media_window_to_pauseplay_state
+        
+    
     def GotoPreviousOrNextFrame( self, direction ):
         
         if self._media is not None:
@@ -2393,6 +2443,11 @@ class MediaContainer( QW.QWidget ):
         return False
         
     
+    def IsUsingMPV( self ):
+        
+        return isinstance( self._media_window, ClientGUIMPV.MPVWidget )
+        
+    
     def IsZoomable( self ):
         
         if self._media is None:
@@ -2469,7 +2524,6 @@ class MediaContainer( QW.QWidget ):
             if self.CurrentlyPresentingMediaWithDuration():
                 
                 self._media_window.PausePlay()
-                
             
         
     
@@ -2659,6 +2713,8 @@ class MediaContainer( QW.QWidget ):
         
         self.show()
         
+        self._UpdateWindowAlwaysOnTop()
+        
     
     def ShouldHaveVolumeControl( self ):
         
@@ -2683,6 +2739,24 @@ class MediaContainer( QW.QWidget ):
             
         
         self._UpdateMediaWindowMute()
+        
+    
+    def SetTieMediaWindowOnTopToPausePlayState( self, tie_media_window_to_pauseplay_state: bool ):
+        
+        self._tie_media_window_to_pauseplay_state = tie_media_window_to_pauseplay_state
+        
+        if self._tie_media_window_to_pauseplay_state:
+            
+            self._UpdateWindowAlwaysOnTop()
+            
+        else:
+            
+            always_on_top = CG.client_controller.new_options.GetBoolean( 'always_start_media_viewers_always_on_top' )
+            
+            action = CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_ON if always_on_top else CAC.SIMPLE_WINDOW_ALWAYS_ON_TOP_OFF
+            
+            self.sendApplicationCommand.emit( CAC.ApplicationCommand.STATICCreateSimpleCommand( action ) )
+            
         
     
     def sizeHint(self) -> QC.QSize:
@@ -3195,6 +3269,7 @@ class MediaContainer( QW.QWidget ):
     def TIMERUIUpdate( self ):
         
         self._ShowHideControlBar()
+        self._UpdateWindowAlwaysOnTop( wait_for_double_click = True )
         
     
 
@@ -3417,9 +3492,7 @@ class OpenExternallyPanel( QW.QWidget ):
         
         path = client_files_manager.GetFilePath( hash, mime )
         
-        launch_path = self._new_options.GetMimeLaunch( mime )
-        
-        HydrusPaths.LaunchFile( path, launch_path )
+        ClientPaths.LaunchFileDefault( path, mime )
         
     
 
@@ -3912,9 +3985,9 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
             
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -3930,15 +4003,15 @@ class StaticImage( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def SetBackgroundColourGenerator( self, background_colour_generator ):

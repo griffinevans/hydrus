@@ -65,13 +65,25 @@ def check_python_version():
         
     
 
-def handle_existing_venv( venv_path, doing_interactive_install: bool ):
+def handle_existing_venv( venv_path, default_venv_selected: bool, doing_interactive_install: bool ):
     
     if venv_path.exists():
         
         if doing_interactive_install:
             
-            print( 'Virtual environment will be reinstalled. Press Enter to continue.' )
+            if not default_venv_selected:
+                
+                print( 'Virtual environment will be reinstalled.' )
+                print( '***' )
+                print( 'THIS WILL DELETE THE SPECIFIED FOLDER. ARE YOU SURE THIS IS OK?' )
+                print( '***' )
+                print( 'Press Enter to continue.' )
+                
+            else:
+                
+                print( 'Virtual environment will be reinstalled. Press Enter to continue.' )
+                
+            
             input()
             
         
@@ -172,7 +184,7 @@ def process_advanced_options( requirements_dict: dict[ str, str | None ], doing_
         
     elif qt == 't':
         
-        requirements_dict[ 'pyside6' ] = '==6.10.3'
+        requirements_dict[ 'pyside6' ] = '==6.11.1'
         requirements_dict[ 'qtpy' ] = '==2.4.3'
         
     elif qt == 'q':
@@ -254,8 +266,8 @@ def process_advanced_options( requirements_dict: dict[ str, str | None ], doing_
         
     elif opencv == 't':
         
-        requirements_dict[ 'opencv-python-headless' ] = '==4.13.0.92'
-        requirements_dict[ 'numpy' ] = '==2.4.1'
+        requirements_dict[ 'opencv-python-headless' ] = '==5.0.0.93'
+        requirements_dict[ 'numpy' ] = '==2.4.6'
         
     
     # Future libraries
@@ -368,10 +380,12 @@ def main():
         
         if result.venv_name is None:
             
+            default_venv_selected = True
             venv_name = 'venv'
             
         else:
             
+            default_venv_selected = False
             venv_name = os.path.expanduser( result.venv_name )
             
         
@@ -384,7 +398,7 @@ def main():
         print( f'venv path: {venv_path}' )
         print()
         
-        handle_existing_venv( venv_path, doing_interactive_install )
+        handle_existing_venv( venv_path, default_venv_selected, doing_interactive_install )
         
         # OK, hydev is reworking this whole thing to be hacky and outside of the pyproject.toml
         # background: we moved old multi-requirements.txt mess to a shared pyproject.toml that had 'groups' to simulate the old/normal/test choices we take here
@@ -393,34 +407,34 @@ def main():
         # we are basically just being a requirements.txt in code; I care not
         
         requirements_dict = {
-            'beautifulsoup4' : '<=4.14.3',
-            'cbor2' : '<=6.1.1',
+            'beautifulsoup4' : '<=4.15.0',
+            'cbor2' : '<=6.1.3',
             'chardet' : '<=7.4.3',
-            'cryptography' : '<=48.0.0',
+            'cryptography' : '<=49.0.0',
             'html5lib' : '<=1.1',
             'lxml' : '<=6.1.1',
             'lz4' : '<=4.4.5',
             'olefile' : '<=0.47',
-            'pillow' : '<=12.2.0',
-            'pillow-heif' : '<=1.3.0',
-            'pillow-jxl-plugin' : '<=1.3.7',
+            'pillow' : '<=12.3.0',
+            'pillow-heif' : '<=1.4.0',
+            'pillow-jxl-plugin' : '<=1.3.8',
             'psutil' : '<=7.2.2',
             'pympler' : '<=1.1',
-            'pyopenssl' : '<=26.2.0',
+            'pyopenssl' : '<=26.3.0',
             'pysocks' : '<=1.7.1',
             'python-dateutil' : '<=2.9.0.post0',
             'pyyaml' : '<=6.0.3',
             'send2trash' : '<=2.1.0',
-            'service-identity' : '<=24.2.0',
+            'service-identity' : '<=26.1.0',
             'show-in-file-manager' : '<=1.1.6',
             'twisted[http2,tls]' : '<=26.4.0',
             'mpv' : '==1.0.8',
-            'opencv-python-headless' : '==4.12.0.88',
-            'numpy' : '<=2.3.1',
+            'opencv-python-headless' : '==4.13.0.92',
+            'numpy' : '<=2.4.6',
             'dateparser' : '==1.4.0',
             'tldextract' : '==5.3.1',
-            'requests' : '==2.33.1',
-            'pyside6' : '==6.9.3',
+            'requests' : '==2.34.2',
+            'pyside6' : '==6.10.3',
             'qtpy' : '==2.4.3',
         }
         

@@ -1521,9 +1521,9 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
         self._DropdownHideShow()
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -1580,20 +1580,20 @@ class AutoCompleteDropdown( CAC.ApplicationCommandProcessorMixin, QW.QWidget ):
                     
                 else:
                     
-                    command_processed = False
+                    command_matched = False
                     
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def resizeEvent( self, event ):
@@ -2852,6 +2852,8 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
                 
                 self._BroadcastChoices( predicates, shift_down )
                 
+                self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(predicates))} search predicates!' )
+                
             
         except Exception as e:
             
@@ -3015,9 +3017,9 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
         return self._search_pause_play.IsOn()
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if self._can_intercept_unusual_key_events and command.IsSimpleCommand():
             
@@ -3029,20 +3031,20 @@ class AutoCompleteDropdownTagsRead( AutocompleteDropdownTagsFileSearchContextORC
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        if not command_processed:
+        if not command_matched:
             
-            command_processed = super().ProcessApplicationCommand( command )
+            command_matched = super().ProcessApplicationCommand( command )
             
         
-        return command_processed
+        return command_matched
         
     
     def SetFileSearchContext( self, file_search_context: ClientSearchFileSearchContext.FileSearchContext ):
@@ -3574,6 +3576,8 @@ class AutoCompleteDropdownTagsWrite( AutoCompleteDropdownTags ):
             tags = HydrusTags.CleanTags( tags )
             
             self.tagsPasted.emit( list( tags ) )
+            
+            self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(tags))} tags!' )
             
         except Exception as e:
             

@@ -7,6 +7,7 @@ from qtpy import QtWidgets as QW
 from hydrus.core import HydrusConstants as HC
 from hydrus.core import HydrusData
 from hydrus.core import HydrusExceptions
+from hydrus.core import HydrusNumbers
 from hydrus.core import HydrusPaths
 from hydrus.core import HydrusSerialisable
 from hydrus.core import HydrusTime
@@ -398,6 +399,8 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         CG.client_controller.pub( 'clipboard', 'text', text )
         
+        self._copy_button.ShowMicroNotification( f'Copied {HydrusNumbers.ToHumanInt(len( list_of_timestamp_data))} encoded time objects!' )
+        
     
     def _AddDomainModifiedTimestamp( self ):
         
@@ -770,6 +773,8 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         
         self._SetValueTimestampDatas( list_of_timestamp_data, from_user = True )
         
+        self._paste_button.ShowMicroNotification( f'Pasted {HydrusNumbers.ToHumanInt(len(list_of_timestamp_data))} encoded times!' )
+        
     
     def _SetValueTimestampDatas( self, list_of_timestamp_data: collections.abc.Collection[ ClientTime.TimestampData ], from_user = True ):
         
@@ -1004,9 +1009,9 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
         return self.GetContentUpdatePackage()
         
     
-    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ):
+    def ProcessApplicationCommand( self, command: CAC.ApplicationCommand ) -> bool:
         
-        command_processed = True
+        command_matched = True
         
         if command.IsSimpleCommand():
             
@@ -1018,15 +1023,15 @@ class EditFileTimestampsPanel( CAC.ApplicationCommandProcessorMixin, ClientGUISc
                 
             else:
                 
-                command_processed = False
+                command_matched = False
                 
             
         else:
             
-            command_processed = False
+            command_matched = False
             
         
-        return command_processed
+        return command_matched
         
     
     def UserIsOKToOK( self ):
